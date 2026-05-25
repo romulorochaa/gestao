@@ -787,47 +787,44 @@ tr:hover td{background:var(--surface2)}
         <div class="page-title">Configurações</div>
         <div class="page-sub">Dados da empresa exibidos no sistema e no portal do cliente</div>
 
-        <div style="display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start">
+        <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
 
-          <!-- Coluna esquerda: formulário -->
-          <div>
+          <!-- Formulário -->
+          <div style="flex:1;min-width:320px">
             <div class="card">
-              <div class="card-title" style="margin-bottom:16px">Identidade da empresa</div>
 
-              <!-- Cor + Preview inline -->
-              <div style="display:flex;gap:12px;align-items:center;padding:14px;background:var(--surface2);border-radius:var(--r);margin-bottom:20px">
-                <input id="cfg-cor" type="color" value="#1a5fb4"
-                  style="width:52px;height:52px;padding:3px;border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;flex-shrink:0">
-                <div style="flex:1">
-                  <div style="font-size:13px;font-weight:600;margin-bottom:2px">Cor principal</div>
-                  <div style="display:flex;gap:8px;align-items:center">
+              <!-- Cor principal em destaque -->
+              <div style="margin-bottom:20px">
+                <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Cor principal</div>
+                <div style="display:flex;align-items:center;gap:14px">
+                  <input id="cfg-cor" type="color" value="#1a5fb4"
+                    style="width:56px;height:56px;padding:4px;border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;flex-shrink:0">
+                  <div style="flex:1">
                     <input id="cfg-cor-hex" placeholder="#1a5fb4" maxlength="7"
-                      style="width:90px;padding:6px 8px;border:0.5px solid var(--border2);border-radius:6px;font-size:12px;font-family:'DM Mono',monospace;background:var(--surface);color:var(--text)"
+                      style="width:120px;padding:8px 10px;border:0.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:'DM Mono',monospace;background:var(--surface);color:var(--text)"
                       oninput="document.getElementById('cfg-cor').value=this.value;cfgAtualizarPreview(document.getElementById('cfg-nome').value,this.value)">
-                    <span style="font-size:11px;color:var(--text3)">Cabeçalho e portal do cliente</span>
+                    <div style="font-size:11px;color:var(--text3);margin-top:5px">Usada no cabeçalho do sistema e no portal do cliente</div>
                   </div>
                 </div>
               </div>
 
-              <!-- Nome e CNPJ -->
-              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Dados principais</div>
-              <div class="frow">
-                <div class="fg"><label>Nome da empresa *</label><input id="cfg-nome" placeholder="Ex: JPM Engenharia de Incêndio"></div>
-                <div class="fg" style="max-width:200px"><label>CNPJ</label><input id="cfg-cnpj" placeholder="00.000.000/0001-00"></div>
-              </div>
+              <div style="height:0.5px;background:var(--border);margin-bottom:20px"></div>
+
+              <!-- Dados principais -->
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:12px">Dados da empresa</div>
+              <div class="fg"><label>Nome da empresa *</label><input id="cfg-nome" placeholder="Ex: JPM Engenharia de Incêndio"></div>
+              <div class="fg"><label>CNPJ</label><input id="cfg-cnpj" placeholder="00.000.000/0001-00"></div>
+
+              <div style="height:0.5px;background:var(--border);margin:16px 0"></div>
 
               <!-- Contato -->
-              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:16px 0 10px">Contato</div>
-              <div class="frow">
-                <div class="fg"><label>Telefone / WhatsApp</label><input id="cfg-telefone" placeholder="(84) 99999-0000"></div>
-                <div class="fg"><label>E-mail</label><input id="cfg-email" type="email" placeholder="contato@empresa.com"></div>
-              </div>
-              <div class="frow">
-                <div class="fg"><label>Site</label><input id="cfg-site" placeholder="www.empresa.com.br"></div>
-                <div class="fg"><label>Cidade / Estado</label><input id="cfg-cidade" placeholder="Natal — RN"></div>
-              </div>
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:12px">Contato</div>
+              <div class="fg"><label>Telefone / WhatsApp</label><input id="cfg-telefone" placeholder="(84) 99999-0000"></div>
+              <div class="fg"><label>E-mail</label><input id="cfg-email" type="email" placeholder="contato@empresa.com"></div>
+              <div class="fg"><label>Site</label><input id="cfg-site" placeholder="www.empresa.com.br"></div>
+              <div class="fg"><label>Cidade / Estado</label><input id="cfg-cidade" placeholder="Natal — RN"></div>
 
-              <!-- Status e botão -->
+              <!-- Rodapé -->
               <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;flex-wrap:wrap;gap:10px">
                 <div id="cfg-status" style="font-size:12px;display:none"></div>
                 <button class="btn btn-primary" onclick="salvarConfig()" style="margin-left:auto">Salvar alterações</button>
@@ -835,34 +832,36 @@ tr:hover td{background:var(--surface2)}
             </div>
           </div>
 
-          <!-- Coluna direita: preview -->
-          <div>
-            <div class="card" style="padding:16px">
+          <!-- Preview -->
+          <div style="width:300px;flex-shrink:0">
+            <div class="card" style="padding:16px;position:sticky;top:70px">
               <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:12px">Pré-visualização</div>
 
-              <!-- Header preview -->
-              <div style="border-radius:var(--r);overflow:hidden;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)">
-                <div id="cfg-preview-header" style="padding:12px 14px;display:flex;align-items:center;gap:10px">
+              <!-- Header do portal -->
+              <div style="border-radius:var(--r);overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.12);margin-bottom:14px">
+                <div id="cfg-preview-header" style="padding:12px 14px;display:flex;align-items:center;gap:10px;background:#1a5fb4">
                   <div id="cfg-preview-logo" style="width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#fff;flex-shrink:0">G</div>
                   <div style="flex:1;min-width:0">
-                    <div id="cfg-preview-nome" style="font-size:13px;font-weight:700;color:#fff">Nome da empresa</div>
-                    <div style="font-size:11px;color:rgba(255,255,255,.75)">Portal do Cliente</div>
+                    <div id="cfg-preview-nome" style="font-size:12px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Nome da empresa</div>
+                    <div style="font-size:10px;color:rgba(255,255,255,.75)">Portal do Cliente</div>
                   </div>
                 </div>
-                <!-- Tabs preview -->
+                <!-- Tabs -->
                 <div style="background:#fff;border-top:0.5px solid rgba(0,0,0,.06);display:flex">
-                  <div id="cfg-preview-tab" style="padding:10px 14px;font-size:12px;font-weight:500;border-bottom:2px solid blue">📊 Andamento</div>
-                  <div style="padding:10px 14px;font-size:12px;color:#9e9b94">📄 Proposta</div>
-                  <div style="padding:10px 14px;font-size:12px;color:#9e9b94">💬 Mensagens</div>
+                  <div id="cfg-preview-tab" style="padding:8px 10px;font-size:11px;font-weight:500;border-bottom:2px solid #1a5fb4;color:#1a5fb4">📊 Andamento</div>
+                  <div style="padding:8px 10px;font-size:11px;color:#9e9b94">📄 Proposta</div>
+                  <div style="padding:8px 10px;font-size:11px;color:#9e9b94">💬 Mensagens</div>
                 </div>
               </div>
 
-              <!-- Info preview -->
-              <div style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:12px;color:var(--text2);line-height:1.7">
-                <div>🔗 Link enviado ao cliente por WhatsApp ou e-mail</div>
-                <div>👤 Sem necessidade de login</div>
-                <div>📊 Progresso, proposta e comentários</div>
-                <div>📞 Contato direto com a empresa</div>
+              <!-- Info -->
+              <div style="background:var(--surface2);border-radius:var(--r);padding:12px">
+                <div style="font-size:11px;color:var(--text2);line-height:1.9">
+                  <div>🔗 Link enviado por WhatsApp ou e-mail</div>
+                  <div>👤 Sem necessidade de login</div>
+                  <div>📊 Progresso, proposta e comentários</div>
+                  <div>📞 Contato direto com a empresa</div>
+                </div>
               </div>
             </div>
           </div>
