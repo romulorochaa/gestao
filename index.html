@@ -275,6 +275,7 @@ tr:hover td{background:var(--surface2)}
       <div class="nav-item" onclick="showPage('calendario',this)"><span class="nav-icon">✓</span> Tarefas</div>
       <div class="nav-section" id="nav-admin-section" style="display:none">administração</div>
       <div class="nav-item" id="nav-usuarios" style="display:none" onclick="showPage('usuarios',this)"><span class="nav-icon">◧</span> Usuários</div>
+      <div class="nav-item" id="nav-config" style="display:none" onclick="showPage('config',this)"><span class="nav-icon">⚙</span> Configurações</div>
     </div>
 
     <div class="main">
@@ -780,6 +781,63 @@ tr:hover td{background:var(--surface2)}
     </div>
   </div>
 </div>
+
+<!-- CONFIGURAÇÕES -->
+      <div class="page" id="page-config">
+        <div class="page-title">Configurações</div>
+        <div class="page-sub">Dados da empresa exibidos no sistema e no portal do cliente</div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Dados da empresa</div>
+            <button class="btn btn-primary btn-sm" onclick="salvarConfig()">Salvar alterações</button>
+          </div>
+          <div class="frow">
+            <div class="fg"><label>Nome da empresa *</label><input id="cfg-nome" placeholder="Ex: JPM Engenharia de Incêndio"></div>
+            <div class="fg"><label>CNPJ</label><input id="cfg-cnpj" placeholder="00.000.000/0001-00"></div>
+          </div>
+          <div class="frow">
+            <div class="fg"><label>Telefone</label><input id="cfg-telefone" placeholder="(84) 99999-0000"></div>
+            <div class="fg"><label>E-mail</label><input id="cfg-email" type="email" placeholder="contato@empresa.com"></div>
+          </div>
+          <div class="frow">
+            <div class="fg"><label>Site</label><input id="cfg-site" placeholder="www.empresa.com.br"></div>
+            <div class="fg"><label>Cidade / Estado</label><input id="cfg-cidade" placeholder="Natal — RN"></div>
+          </div>
+          <div class="frow">
+            <div class="fg" style="max-width:200px">
+              <label>Cor principal</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input id="cfg-cor" type="color" value="#1a5fb4"
+                  style="width:48px;height:36px;padding:2px;border:0.5px solid var(--border2);border-radius:6px;cursor:pointer">
+                <input id="cfg-cor-hex" placeholder="#1a5fb4" maxlength="7"
+                  style="flex:1;padding:8px 10px;border:0.5px solid var(--border2);border-radius:6px;font-size:13px;font-family:'DM Mono',monospace;background:var(--surface);color:var(--text)"
+                  oninput="document.getElementById('cfg-cor').value=this.value">
+              </div>
+              <div style="font-size:11px;color:var(--text3);margin-top:4px">Usada no cabeçalho e no portal do cliente</div>
+            </div>
+          </div>
+          <div id="cfg-status" style="margin-top:4px;font-size:12px;display:none"></div>
+        </div>
+
+        <!-- Preview -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">Pré-visualização do portal do cliente</div>
+          <div id="cfg-preview" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden">
+            <div id="cfg-preview-header" style="padding:12px 16px;color:#fff;display:flex;align-items:center;gap:10px">
+              <div id="cfg-preview-logo" style="width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff;flex-shrink:0">G</div>
+              <div>
+                <div id="cfg-preview-nome" style="font-size:13px;font-weight:700">Nome da empresa</div>
+                <div style="font-size:11px;opacity:.75">Portal do Cliente — Projeto Exemplo</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 
 <!-- ══ MODAIS ══ -->
 
@@ -1796,6 +1854,7 @@ async function _iniciarApp(u){
   document.getElementById('nav-admin-section').style.display=isAdminUser?'':'none';
   document.getElementById('nav-usuarios').style.display=
     (CONFIG.modulos.usuarios&&isAdminUser)?'':'none';
+  document.getElementById('nav-config').style.display=isAdminUser?'':'none';
 
   // Atualiza UI com dados do usuário
   document.getElementById('user-nome').textContent=u.nome;
@@ -1808,6 +1867,7 @@ async function _iniciarApp(u){
   document.getElementById('data-hoje').textContent=`${dias[n.getDay()]}, ${n.getDate()} de ${meses[n.getMonth()]} de ${n.getFullYear()}`;
 
   renderDashboard();
+  carregarConfigEmpresa();
   setTimeout(carregarNotificacoes,1500);
   setTimeout(()=>{ calCarregarTarefas().then(calIniciarLembretes); },2000);
   setTimeout(gcalIniciar,3000);
@@ -1842,7 +1902,7 @@ function showPage(id,el){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   if(el)el.classList.add('active');
-  const fn={dashboard:renderDashboard,clientes:renderClientes,vendas:renderVendas,financeiro:renderFinanceiro,funcionarios:renderFuncionarios,bombeiros:renderBombeiros,usuarios:renderUsuarios,orcamentos:renderOrcamentos,gantt:renderGanttPage,calendario:renderCalendario};
+  const fn={dashboard:renderDashboard,clientes:renderClientes,vendas:renderVendas,financeiro:renderFinanceiro,funcionarios:renderFuncionarios,bombeiros:renderBombeiros,usuarios:renderUsuarios,orcamentos:renderOrcamentos,gantt:renderGanttPage,calendario:renderCalendario,config:renderConfig};
   if(fn[id])fn[id]();
 }
 
@@ -7006,6 +7066,114 @@ function mostrarNotificacao(titulo, texto, tipo='info'){
   // Atualiza lista também
   setTimeout(carregarNotificacoes, 500);
 }
+// ── CONFIGURAÇÕES DA EMPRESA ──────────────────────────────────
+async function renderConfig(){
+  if(!isAdmin()) return;
+  // Carrega config salva no banco (tabela config_empresa)
+  const{data}=await SB.from('config_empresa').select('*').limit(1).maybeSingle();
+  const cfg=data||{};
+  // Preenche campos com valores do banco ou fallback do CONFIG local
+  const campos={
+    nome:     cfg.nome     || CONFIG.empresa.nome,
+    cnpj:     cfg.cnpj     || CONFIG.empresa.cnpj,
+    telefone: cfg.telefone || CONFIG.empresa.telefone,
+    email:    cfg.email    || CONFIG.empresa.email,
+    site:     cfg.site     || CONFIG.empresa.site||'',
+    cidade:   cfg.cidade   || CONFIG.empresa.cidade||'',
+    cor:      cfg.cor      || CONFIG.empresa.cor||'#1a5fb4',
+  };
+  document.getElementById('cfg-nome').value    = campos.nome;
+  document.getElementById('cfg-cnpj').value    = campos.cnpj;
+  document.getElementById('cfg-telefone').value= campos.telefone;
+  document.getElementById('cfg-email').value   = campos.email;
+  document.getElementById('cfg-site').value    = campos.site;
+  document.getElementById('cfg-cidade').value  = campos.cidade;
+  document.getElementById('cfg-cor').value     = campos.cor;
+  document.getElementById('cfg-cor-hex').value = campos.cor;
+  cfgAtualizarPreview(campos.nome, campos.cor);
+
+  // Listeners em tempo real
+  document.getElementById('cfg-cor').oninput=function(){
+    document.getElementById('cfg-cor-hex').value=this.value;
+    cfgAtualizarPreview(document.getElementById('cfg-nome').value,this.value);
+  };
+  document.getElementById('cfg-nome').oninput=function(){
+    cfgAtualizarPreview(this.value,document.getElementById('cfg-cor').value);
+  };
+}
+
+function cfgAtualizarPreview(nome,cor){
+  const h=document.getElementById('cfg-preview-header');
+  const logo=document.getElementById('cfg-preview-logo');
+  const nomeEl=document.getElementById('cfg-preview-nome');
+  if(h) h.style.background=cor||'#1a5fb4';
+  if(logo) logo.textContent=(nome||'G')[0].toUpperCase();
+  if(nomeEl) nomeEl.textContent=nome||'Nome da empresa';
+}
+
+async function salvarConfig(){
+  if(!isAdmin()) return;
+  const payload={
+    nome:     document.getElementById('cfg-nome').value.trim(),
+    cnpj:     document.getElementById('cfg-cnpj').value.trim(),
+    telefone: document.getElementById('cfg-telefone').value.trim(),
+    email:    document.getElementById('cfg-email').value.trim(),
+    site:     document.getElementById('cfg-site').value.trim(),
+    cidade:   document.getElementById('cfg-cidade').value.trim(),
+    cor:      document.getElementById('cfg-cor').value,
+  };
+  if(!payload.nome){alert('Informe o nome da empresa.');return;}
+
+  const statusEl=document.getElementById('cfg-status');
+  statusEl.style.display='block';
+  statusEl.style.color='var(--text3)';
+  statusEl.textContent='Salvando...';
+
+  // Upsert — cria ou atualiza o único registro
+  const{data:existing}=await SB.from('config_empresa').select('id').limit(1).maybeSingle();
+  let error;
+  if(existing?.id){
+    ({error}=await SB.from('config_empresa').update(payload).eq('id',existing.id));
+  } else {
+    ({error}=await SB.from('config_empresa').insert(payload));
+  }
+
+  if(error){
+    statusEl.style.color='var(--red)';
+    statusEl.textContent='Erro ao salvar: '+error.message;
+    return;
+  }
+
+  // Atualiza CONFIG em memória imediatamente
+  Object.assign(CONFIG.empresa, payload);
+
+  // Atualiza nome na sidebar se existir
+  const nomeEl=document.getElementById('empresa-nome');
+  if(nomeEl) nomeEl.textContent=payload.nome;
+
+  statusEl.style.color='var(--green)';
+  statusEl.textContent='✓ Configurações salvas com sucesso!';
+  setTimeout(()=>statusEl.style.display='none',3000);
+  log('Config','Dados da empresa atualizados: '+payload.nome,'Concluído');
+}
+
+// Carrega config do banco ao iniciar o app
+async function carregarConfigEmpresa(){
+  try{
+    const{data}=await SB.from('config_empresa').select('*').limit(1).maybeSingle();
+    if(data){
+      // Sobrescreve CONFIG.empresa com valores do banco
+      if(data.nome)     CONFIG.empresa.nome     =data.nome;
+      if(data.cnpj)     CONFIG.empresa.cnpj     =data.cnpj;
+      if(data.telefone) CONFIG.empresa.telefone =data.telefone;
+      if(data.email)    CONFIG.empresa.email    =data.email;
+      if(data.site)     CONFIG.empresa.site     =data.site;
+      if(data.cidade)   CONFIG.empresa.cidade   =data.cidade;
+      if(data.cor)      CONFIG.empresa.cor      =data.cor;
+    }
+  }catch(e){ console.warn('config_empresa não encontrada, usando CONFIG padrão'); }
+}
+
 // ── FIM NOTIFICAÇÕES ──────────────────────────────────────────
 
 // ── INIT ──────────────────────────────────────────────────────
