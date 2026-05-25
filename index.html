@@ -5347,41 +5347,6 @@ function calFmt(d){
   return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-function fmt(value, decimals = 2){
-  const num = Number(value || 0);
-  return num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-}
-
-function fmtData(value){
-  if(!value && value !== 0) return '—';
-  let d;
-  if(value instanceof Date){
-    d = value;
-  } else if(typeof value === 'string'){
-    const datePart = value.split('T')[0];
-    const parts = datePart.split('-');
-    if(parts.length === 3){
-      d = new Date(`${parts[0]}-${parts[1]}-${parts[2]}T00:00:00`);
-    } else {
-      d = new Date(value);
-    }
-  } else {
-    d = new Date(value);
-  }
-  if(Number.isNaN(d.getTime())) return String(value);
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-}
-
-function diasAte(value){
-  if(!value) return null;
-  const d = new Date(typeof value === 'string' && !value.includes('T') ? `${value}T00:00:00` : value);
-  if(Number.isNaN(d.getTime())) return null;
-  const hoje = new Date();
-  hoje.setHours(0,0,0,0);
-  d.setHours(0,0,0,0);
-  return Math.round((d.getTime() - hoje.getTime()) / 86400000);
-}
-
 // ── MENSAL ────────────────────────────────────────────────────
 function calRenderMensal(){
   const ano=_calRef.getFullYear(),mes=_calRef.getMonth();
