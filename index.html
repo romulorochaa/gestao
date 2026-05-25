@@ -4438,6 +4438,14 @@ async function copiarLinkCliente(){
   if(!ORC_ATIVO){alert('Abra uma proposta primeiro.');return;}
   const{data:o}=await SB.from('orcamentos').select('token_cliente,numero,cliente_nome').eq('id',ORC_ATIVO).single();
   if(!o?.token_cliente){alert('Token não encontrado. Tente reabrir a proposta.');return;}
+  // Salva dados da empresa no orçamento para o portal do cliente
+  await SB.from('orcamentos').update({
+    empresa_nome:     CONFIG.empresa.nome,
+    empresa_telefone: CONFIG.empresa.telefone,
+    empresa_email:    CONFIG.empresa.email,
+    empresa_cor:      CONFIG.empresa.cor||'#1a5fb4',
+  }).eq('id',ORC_ATIVO);
+
   const link=`${window.location.origin}/cliente.html?token=${o.token_cliente}`;
   try{
     await navigator.clipboard.writeText(link);
