@@ -1751,6 +1751,56 @@ const SB = createClient('https://brkobtnpmikhucarewct.supabase.co','sb_publishab
   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
 });
 
+// ── MULTI-TENANT: empresa_id automático ───────────────────────
+let EMP_ID = null; // definido no login
+
+// Wrapper que injeta empresa_id automaticamente
+// Uso: em vez de Q('tabela') use Q('tabela')
+// Q injeta .eq('empresa_id', EMP_ID) em selects e adiciona empresa_id em inserts
+const TABELAS_GLOBAIS = ['empresas']; // tabelas sem empresa_id
+function Q(tabela){
+  if(TABELAS_GLOBAIS.includes(tabela)) return Q(tabela);
+  const base = Q(tabela);
+  // Proxy que intercepta select/insert/update/delete
+  return new Proxy(base, {
+    get(target, prop){
+      const orig = target[prop];
+      if(typeof orig !== 'function') return orig;
+      if(prop === 'select'){
+        return (...args) => target.select(...args).eq('empresa_id', EMP_ID);
+      }
+      if(prop === 'insert'){
+        return (data, ...rest) => {
+          // Injeta empresa_id nos dados
+          if(Array.isArray(data)){
+            data = data.map(d => ({...d, empresa_id: EMP_ID}));
+          } else {
+            data = {...data, empresa_id: EMP_ID};
+          }
+          return target.insert(data, ...rest);
+        };
+      }
+      if(prop === 'update'){
+        return (data, ...rest) => target.update(data, ...rest).eq('empresa_id', EMP_ID);
+      }
+      if(prop === 'delete'){
+        return (...args) => target.delete(...args).eq('empresa_id', EMP_ID);
+      }
+      if(prop === 'upsert'){
+        return (data, ...rest) => {
+          if(Array.isArray(data)){
+            data = data.map(d => ({...d, empresa_id: EMP_ID}));
+          } else {
+            data = {...data, empresa_id: EMP_ID};
+          }
+          return target.upsert(data, ...rest);
+        };
+      }
+      return orig.bind(target);
+    }
+  });
+}
+
 let USER={id:null}, PERFIL={nivel:null,nome:''}, VENDA_ATIVA=null, ORC_ATIVO=null;
 
 // ── CONSTANTES GLOBAIS ────────────────────────────────────────
@@ -1784,9 +1834,10 @@ function badge(s){
   if(sessao){
     try{
       const s=JSON.parse(sessao);
-      // Valida que o usuário ainda existe e está ativo
+      // Restaura EMP_ID antes da query para Q() funcionar
+      if(s.empresa_id) EMP_ID=s.empresa_id;
       const{data:u}=await SB.from('perfis').select('*').eq('id',s.id).eq('ativo',true).single();
-      if(u){ await _iniciarApp(u); return; }
+      if(u){ EMP_ID=u.empresa_id; await _iniciarApp(u); return; }
     }catch(e){ sessionStorage.removeItem('gestao_sessao'); }
   }
   // Mostra login
@@ -1802,15 +1853,15 @@ async function entrar(){
   if(!usuario||!senha){ errEl.textContent='Preencha usuário e senha.'; return; }
   btn.disabled=true; btn.textContent='Entrando...';
   try{
-    // Busca usuário pelo username
-    const{data:u,error}=await SB.from('perfis')
-      .select('*').eq('usuario',usuario).eq('ativo',true).single();
+    // Busca usuário globalmente pelo username (cross-company)
+    const{data:u,error}=await SB.from('perfis').select('*').eq('usuario',usuario).eq('ativo',true).single();
     if(error||!u){ errEl.textContent='Usuário não encontrado ou inativo.'; return; }
+    if(!u.empresa_id){ errEl.textContent='Usuário sem empresa vinculada. Contate o suporte.'; return; }
     // Verifica senha com hash
     const senhaHash=await _hashSenha(senha);
     if(senhaHash!==u.senha_hash){ errEl.textContent='Senha incorreta.'; return; }
-    // Login bem-sucedido
-    sessionStorage.setItem('gestao_sessao',JSON.stringify({id:u.id}));
+    // Login bem-sucedido — salva id e empresa_id na sessão
+    sessionStorage.setItem('gestao_sessao',JSON.stringify({id:u.id, empresa_id:u.empresa_id}));
     await _iniciarApp(u);
   }finally{
     btn.disabled=false; btn.textContent='Entrar';
@@ -1833,6 +1884,7 @@ try{
 async function _iniciarApp(u){
   USER={id:u.id};
   PERFIL={nivel:u.nivel, nome:u.nome};
+  EMP_ID = u.empresa_id; // ← define o contexto multi-tenant
   document.getElementById('login-wrap').style.display='none';
   document.getElementById('app').classList.add('visible');
 
@@ -1978,7 +2030,7 @@ const _CLI_TTL = 5 * 60 * 1000; // 5 minutos
 async function cliCarregar(){
   const agora = Date.now();
   if(_cliLista.length && (agora - _cliCacheTs) < _CLI_TTL) return; // cache válido
-  const{data}=await SB.from('clientes').select('id,nome,documento,cidade').order('nome');
+  const{data}=await Q('clientes').select('id,nome,documento,cidade').order('nome');
   _cliLista=data||[];
   _cliCacheTs=agora;
 }
@@ -2067,7 +2119,7 @@ function cliResetar(ctx){
 
 async function popularSelects(){
   await cliCarregar(); // garante cache carregado
-  const{data:fn}=await SB.from('funcionarios').select('id,nome').eq('status','Ativo').order('nome');
+  const{data:fn}=await Q('funcionarios').select('id,nome').eq('status','Ativo').order('nome');
   const vr=document.getElementById('v-resp');
   if(vr){
     vr.innerHTML='<option value="">Selecione...</option>';
@@ -2077,7 +2129,7 @@ async function popularSelects(){
 
 async function log(tipo,desc,status){
   // Não bloqueia — falha silenciosa se não houver autenticação
-  SB.from('atividades').insert({tipo,descricao:desc,status,usuario_nome:'JPM'}).then(()=>{}).catch(()=>{});
+  Q('atividades').insert({tipo,descricao:desc,status,usuario_nome:'JPM'}).then(()=>{}).catch(()=>{});
 }
 
 // ── DASHBOARD ────────────────────────────────────────────────
@@ -2100,12 +2152,12 @@ async function renderDashboard(){
     {data:orcs},
     {data:itensAll},
   ]=await Promise.all([
-    SB.from('lancamentos').select('*'),
-    SB.from('clientes').select('status'),
-    SB.from('processos_cb').select('*'),
-    SB.from('parcelas').select('*').order('data_vencimento'),
-    SB.from('orcamentos').select('id,numero,titulo,cliente_nome,valor_total,status').order('numero',{ascending:false}),
-    SB.from('itens_orcamento').select('orcamento_id,progresso,status_execucao,data_fim_prevista'),
+    Q('lancamentos').select('*'),
+    Q('clientes').select('status'),
+    Q('processos_cb').select('*'),
+    Q('parcelas').select('*').order('data_vencimento'),
+    Q('orcamentos').select('id,numero,titulo,cliente_nome,valor_total,status').order('numero',{ascending:false}),
+    Q('itens_orcamento').select('orcamento_id,progresso,status_execucao,data_fim_prevista'),
   ]);
 
   // ── FINANCEIRO DO MÊS ─────────────────────────────────────
@@ -2270,7 +2322,7 @@ async function renderDashboard(){
 // ── CLIENTES ────────────────────────────────────────────────
 let _clientes=[];
 async function renderClientes(){
-  const{data}=await SB.from('clientes').select('*').order('nome');
+  const{data}=await Q('clientes').select('*').order('nome');
   _clientes=data||[];renderTabelaClientes(_clientes);
 }
 function buscarClientes(q){
@@ -2376,12 +2428,12 @@ async function salvarCliente(){
   };
   if(_clienteEditandoId){
     // UPDATE
-    const{error}=await SB.from('clientes').update(payload).eq('id',_clienteEditandoId);
+    const{error}=await Q('clientes').update(payload).eq('id',_clienteEditandoId);
     if(error){alert('Erro: '+error.message);return;}
     log('Cliente','Cliente atualizado: '+nome,'Concluído');
   } else {
     // INSERT
-    const{error}=await SB.from('clientes').insert(payload);
+    const{error}=await Q('clientes').insert(payload);
     if(error){alert('Erro: '+error.message);return;}
     log('Cliente','Novo cliente: '+nome,'Concluído');
   }
@@ -2400,8 +2452,8 @@ async function salvarCliente(){
 // ── VENDAS ────────────────────────────────────────────────────
 async function renderVendas(){
   const[{data:vendas},{data:parcelas}]=await Promise.all([
-    SB.from('vendas').select('*').order('criado_em',{ascending:false}),
-    SB.from('parcelas').select('*'),
+    Q('vendas').select('*').order('criado_em',{ascending:false}),
+    Q('parcelas').select('*'),
   ]);
   const v=vendas||[];const p=parcelas||[];
   document.getElementById('v-abertas').textContent=v.filter(x=>['Iniciado','Proposta','Negociação'].includes(x.etapa)).length;
@@ -2433,7 +2485,7 @@ async function renderVendas(){
 
 async function abrirDetalheVenda(id){
   VENDA_ATIVA=id;
-  const{data:v}=await SB.from('vendas').select('*').eq('id',id).single();
+  const{data:v}=await Q('vendas').select('*').eq('id',id).single();
   await popularSelects();
   document.getElementById('modal-venda-titulo').textContent='Editar venda';
   // Preenche busca de cliente
@@ -2462,19 +2514,19 @@ async function salvarVenda(){
   const cid=document.getElementById('v-cliente').value;
   const servico=document.getElementById('v-servico').value.trim();
   if(!cid||!servico){alert('Preencha cliente e serviço.');return;}
-  const{data:cli}=await SB.from('clientes').select('nome').eq('id',cid).single();
+  const{data:cli}=await Q('clientes').select('nome').eq('id',cid).single();
   const rid=document.getElementById('v-resp').value;
   let respNome='';
-  if(rid){const{data:rf}=await SB.from('funcionarios').select('nome').eq('id',rid).single();respNome=rf?.nome||'';}
+  if(rid){const{data:rf}=await Q('funcionarios').select('nome').eq('id',rid).single();respNome=rf?.nome||'';}
   const etapa=document.getElementById('v-etapa').value;
   const valor=document.getElementById('v-valor').value||0;
 
   if(VENDA_ATIVA){
     // atualizar
-    await SB.from('vendas').update({cliente_id:cid,cliente_nome:cli?.nome||'',servico,valor,responsavel_nome:respNome,etapa,data_proposta:document.getElementById('v-data').value||hoje(),observacoes:document.getElementById('v-obs').value}).eq('id',VENDA_ATIVA);
+    await Q('vendas').update({cliente_id:cid,cliente_nome:cli?.nome||'',servico,valor,responsavel_nome:respNome,etapa,data_proposta:document.getElementById('v-data').value||hoje(),observacoes:document.getElementById('v-obs').value}).eq('id',VENDA_ATIVA);
     await log('Venda',`Venda atualizada — ${cli?.nome}: ${servico}`,etapa);
   } else {
-    const{data:nova,error}=await SB.from('vendas').insert({cliente_id:cid,cliente_nome:cli?.nome||'',servico,valor,responsavel_nome:respNome,etapa,data_proposta:document.getElementById('v-data').value||hoje(),observacoes:document.getElementById('v-obs').value}).select().single();
+    const{data:nova,error}=await Q('vendas').insert({cliente_id:cid,cliente_nome:cli?.nome||'',servico,valor,responsavel_nome:respNome,etapa,data_proposta:document.getElementById('v-data').value||hoje(),observacoes:document.getElementById('v-obs').value}).select().single();
     if(error){alert('Erro: '+error.message);return;}
     VENDA_ATIVA=nova.id;
     document.getElementById('modal-venda-titulo').textContent='Detalhes da venda';
@@ -2491,7 +2543,7 @@ async function salvarVenda(){
 
 // ── ANEXOS ───────────────────────────────────────────────────
 async function carregarAnexos(vendaId){
-  const{data}=await SB.from('anexos').select('*').eq('venda_id',vendaId).order('criado_em');
+  const{data}=await Q('anexos').select('*').eq('venda_id',vendaId).order('criado_em');
   const el=document.getElementById('lista-anexos');
   if(!data||!data.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);text-align:center;padding:12px 0">Nenhum arquivo anexado ainda.</div>';return;}
   el.innerHTML=data.map(a=>`<div class="file-item">
@@ -2511,7 +2563,7 @@ async function uploadProposta(input){
   const path=`${VENDA_ATIVA}/${Date.now()}_${file.name.replace(/\s/g,'_')}`;
   const{error:upErr}=await SB.storage.from('propostas').upload(path,file);
   if(upErr){alert('Erro no upload: '+upErr.message+'\n\nCertifique-se de criar o bucket "propostas" no Supabase Storage.');return;}
-  await SB.from('anexos').insert({venda_id:VENDA_ATIVA,nome:file.name,tamanho:file.size,tipo_mime:file.type,storage_path:path});
+  await Q('anexos').insert({venda_id:VENDA_ATIVA,nome:file.name,tamanho:file.size,tipo_mime:file.type,storage_path:path});
   await log('Venda',`Proposta anexada: ${file.name}`,'Concluído');
   input.value='';
   carregarAnexos(VENDA_ATIVA);
@@ -2525,7 +2577,7 @@ async function baixarAnexo(path,nome){
 async function excluirAnexo(id,path){
   if(!confirm('Excluir este arquivo?'))return;
   await SB.storage.from('propostas').remove([path]);
-  await SB.from('anexos').delete().eq('id',id);
+  await Q('anexos').delete().eq('id',id);
   carregarAnexos(VENDA_ATIVA);
 }
 
@@ -2558,8 +2610,8 @@ async function gerarParcelas(){
   const inicio=document.getElementById('p-inicio').value;
   if(!total||!inicio){alert('Preencha o valor total e o primeiro vencimento.');return;}
   if(!confirm(`Gerar ${qtd} parcela(s) de ${fmt(total/qtd)}? As parcelas existentes desta venda serão substituídas.`))return;
-  await SB.from('parcelas').delete().eq('venda_id',VENDA_ATIVA);
-  const{data:vd}=await SB.from('vendas').select('servico,cliente_nome').eq('id',VENDA_ATIVA).single();
+  await Q('parcelas').delete().eq('venda_id',VENDA_ATIVA);
+  const{data:vd}=await Q('vendas').select('servico,cliente_nome').eq('id',VENDA_ATIVA).single();
   const porParcela=total/qtd;
   const rows=[];
   for(let i=0;i<qtd;i++){
@@ -2567,14 +2619,14 @@ async function gerarParcelas(){
     d.setMonth(d.getMonth()+i);
     rows.push({venda_id:VENDA_ATIVA,venda_servico:vd?.servico||'',cliente_nome:vd?.cliente_nome||'',numero:i+1,total_parcelas:qtd,valor:parseFloat(porParcela.toFixed(2)),data_vencimento:d.toISOString().split('T')[0],status:'Pendente'});
   }
-  const{error}=await SB.from('parcelas').insert(rows);
+  const{error}=await Q('parcelas').insert(rows);
   if(error){alert('Erro ao gerar parcelas: '+error.message);return;}
   await log('Financeiro',`${qtd} parcela(s) gerada(s) — ${vd?.cliente_nome}: ${vd?.servico}`,'Pendente');
   carregarParcelas(VENDA_ATIVA);renderVendas();renderDashboard();renderFinanceiro();
 }
 
 async function carregarParcelas(vendaId){
-  const{data}=await SB.from('parcelas').select('*').eq('venda_id',vendaId).order('numero');
+  const{data}=await Q('parcelas').select('*').eq('venda_id',vendaId).order('numero');
   const el=document.getElementById('parcelas-existentes');
   if(!data||!data.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:12px 0">Nenhuma parcela gerada ainda. Use o formulário acima para configurar o pagamento.</div>';return;}
   const total=data.reduce((s,p)=>s+Number(p.valor),0);
@@ -2630,7 +2682,7 @@ async function salvarParcelaVenda(id){
   const data=document.getElementById(`pe-data-${id}`)?.value;
   if(!valor||valor<=0){alert('Informe um valor válido.');return;}
   if(!data){alert('Informe a data de vencimento.');return;}
-  const{error}=await SB.from('parcelas').update({
+  const{error}=await Q('parcelas').update({
     valor,
     data_vencimento:data,
   }).eq('id',id);
@@ -2642,7 +2694,7 @@ async function salvarParcelaVenda(id){
 async function excluirParcela(id){
   if(!podeExcluir()){alert('Apenas administradores podem excluir.');return;}
   if(!confirm('Excluir esta parcela?'))return;
-  await SB.from('parcelas').delete().eq('id',id);
+  await Q('parcelas').delete().eq('id',id);
   carregarParcelas(VENDA_ATIVA);
   renderFinanceiro();
 }
@@ -2837,8 +2889,8 @@ async function renderFinanceiro(){
   _finAtualizarLabel();
 
   const[{data:lancAll},{data:parcAll}]=await Promise.all([
-    SB.from('lancamentos').select('*').order('data_lancamento',{ascending:false}),
-    SB.from('parcelas').select('*').order('data_vencimento'),
+    Q('lancamentos').select('*').order('data_lancamento',{ascending:false}),
+    Q('parcelas').select('*').order('data_vencimento'),
   ]);
 
   // Aplica filtro nos lançamentos
@@ -2912,7 +2964,7 @@ function _renderTabelaTodos(lista){
 }
 
 async function renderParcelasFinanceiro(parcelas){
-  if(!parcelas){const{data}=await SB.from('parcelas').select('*').order('data_vencimento');parcelas=data||[];}
+  if(!parcelas){const{data}=await Q('parcelas').select('*').order('data_vencimento');parcelas=data||[];}
   const el=document.getElementById('tabela-parcelas-fin');
   if(!parcelas.length){el.innerHTML='<div class="empty">Nenhuma parcela cadastrada. Crie parcelas na aba Vendas → Detalhes → Pagamentos.</div>';return;}
   // ordenar: atrasadas primeiro, depois pendentes por vencimento, depois recebidas
@@ -2957,7 +3009,7 @@ let _parcelaRecId = null;
 
 async function abrirRecebimento(parcelaId){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:p}=await SB.from('parcelas').select('*').eq('id',parcelaId).single();
+  const{data:p}=await Q('parcelas').select('*').eq('id',parcelaId).single();
   if(!p) return;
   _parcelaRecId = parcelaId;
 
@@ -3009,12 +3061,12 @@ async function confirmarRecebimento(){
   if(btn){btn.disabled=true;btn.textContent='Salvando...';}
 
   // Verifica se já foi marcado como Recebido (evita duplicata)
-  const{data:atual}=await SB.from('parcelas').select('status').eq('id',_parcelaRecId).single();
+  const{data:atual}=await Q('parcelas').select('status').eq('id',_parcelaRecId).single();
   if(atual?.status==='Recebido'){
     // Só atualiza valor/data, não cria novo recebimento
   }
 
-  const{error}=await SB.from('parcelas').update({
+  const{error}=await Q('parcelas').update({
     status:          'Recebido',
     valor_recebido:  valorRec,
     data_recebimento:dataRec,
@@ -3034,13 +3086,13 @@ async function renderLancFiltro(tipo){
   const el=document.getElementById(tipo==='Receita'?'tabela-lanc-rec':'tabela-lanc-des');
 
   // Busca lançamentos manuais do tipo
-  const{data:lancAll}=await SB.from('lancamentos').select('*').eq('tipo',tipo).order('data_lancamento',{ascending:false});
+  const{data:lancAll}=await Q('lancamentos').select('*').eq('tipo',tipo).order('data_lancamento',{ascending:false});
   const lancFiltrados=_finFiltrarPorData(lancAll||[],'data_lancamento');
 
   // Para Receitas: inclui também parcelas recebidas no período
   let parcRecebidas=[];
   if(tipo==='Receita'){
-    const{data:parc}=await SB.from('parcelas').select('*').eq('status','Recebido').order('data_recebimento',{ascending:false});
+    const{data:parc}=await Q('parcelas').select('*').eq('status','Recebido').order('data_recebimento',{ascending:false});
     parcRecebidas=_finFiltrarPorData(parc||[],'data_recebimento').map(p=>({
       _parcela:true,
       id:p.id,
@@ -3157,7 +3209,7 @@ async function lancTipoChange(){
     const selObra=document.getElementById('l-obra');
     const cur=selObra.value;
     selObra.innerHTML='<option value="">— Nenhuma —</option>';
-    const{data:obras}=await SB.from('orcamentos')
+    const{data:obras}=await Q('orcamentos')
       .select('id,numero,titulo,cliente_nome')
       .eq('status','Aprovado')
       .order('numero',{ascending:false});
@@ -3191,7 +3243,7 @@ function calcPreviewDespesa(){
 let _lancEditandoId = null;
 
 async function editarLancamento(id){
-  const{data:l}=await SB.from('lancamentos').select('*').eq('id',id).single();
+  const{data:l}=await Q('lancamentos').select('*').eq('id',id).single();
   if(!l){alert('Lançamento não encontrado.');return;}
   _lancEditandoId=id;
   document.getElementById('lanc-modal-titulo').textContent='Editar lançamento';
@@ -3225,7 +3277,7 @@ async function salvarLancamento(){
     const dataCorte=new Date();
     dataCorte.setDate(dataCorte.getDate()-3);
     const corteISO=dataCorte.toISOString().split('T')[0];
-    const{data:dup}=await SB.from('lancamentos')
+    const{data:dup}=await Q('lancamentos')
       .select('id,data_lancamento,descricao,valor,origem')
       .eq('tipo',tipo)
       .eq('descricao',desc)
@@ -3250,7 +3302,7 @@ async function salvarLancamento(){
     const venc=document.getElementById('l-parc-venc').value;
     if(!venc){alert('Informe o primeiro vencimento das parcelas.');return;}
     if(qtd<2){alert('Informe ao menos 2 parcelas.');return;}
-    const{data:lanc,error:eLanc}=await SB.from('lancamentos').insert({
+    const{data:lanc,error:eLanc}=await Q('lancamentos').insert({
       tipo:'Despesa',descricao:desc,valor:Number(valor),
       data_lancamento:document.getElementById('l-data').value||hoje(),
       origem,categoria:categ||null,status:'Pendente',orcamento_id:obraId||null,
@@ -3264,7 +3316,7 @@ async function salvarLancamento(){
         orcamento_id:obraId||null,numero:i+1,total_parcelas:qtd,valor:porParcela,
         data_vencimento:d.toISOString().split('T')[0],status:'Pendente'});
     }
-    const{error:eParcelas}=await SB.from('parcelas_despesa').insert(rows);
+    const{error:eParcelas}=await Q('parcelas_despesa').insert(rows);
     if(eParcelas){alert('Lançamento criado, mas erro nas parcelas: '+eParcelas.message);}
     log('Financeiro',`Despesa parcelada: ${desc} ${qtd}x — ${fmt(Number(valor)/qtd)}`,'Pendente');
   } else {
@@ -3273,9 +3325,9 @@ async function salvarLancamento(){
       origem,categoria:categ||null,status,orcamento_id:obraId||null};
     let error;
     if(_lancEditandoId){
-      ({error}=await SB.from('lancamentos').update(payload).eq('id',_lancEditandoId));
+      ({error}=await Q('lancamentos').update(payload).eq('id',_lancEditandoId));
     } else {
-      ({error}=await SB.from('lancamentos').insert(payload));
+      ({error}=await Q('lancamentos').insert(payload));
     }
     if(error){alert('Erro: '+error.message);return;}
     log('Financeiro',`${tipo}${categ?' ('+categ+')':''}: ${desc} — ${fmt(valor)}`,status);
@@ -3294,7 +3346,7 @@ async function salvarLancamento(){
 
 // ── PARCELAS A PAGAR ─────────────────────────────────────────
 async function renderParcelasAPagar(){
-  const{data:parcelas}=await SB.from('parcelas_despesa').select('*').order('data_vencimento');
+  const{data:parcelas}=await Q('parcelas_despesa').select('*').order('data_vencimento');
   const el=document.getElementById('tabela-apagar');
   const pendentes=(parcelas||[]).filter(p=>p.status==='Pendente');
   const totalPend=pendentes.reduce((s,p)=>s+Number(p.valor),0);
@@ -3336,19 +3388,19 @@ async function renderParcelasAPagar(){
 
 async function pagarParcelaDespesa(id){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:p}=await SB.from('parcelas_despesa').select('*').eq('id',id).single();
+  const{data:p}=await Q('parcelas_despesa').select('*').eq('id',id).single();
   if(!p)return;
 
   // Guarda contra duplo clique
   const btn=document.querySelector(`[onclick="pagarParcelaDespesa('${id}')"]`);
   if(btn){btn.disabled=true;btn.textContent='Salvando...';}
 
-  await SB.from('parcelas_despesa').update({status:'Pago',data_pagamento:hoje()}).eq('id',id);
+  await Q('parcelas_despesa').update({status:'Pago',data_pagamento:hoje()}).eq('id',id);
 
   // Cria lançamento confirmado apenas para esta parcela
   // IMPORTANTE: NÃO atualiza o lançamento pai para Confirmado —
   // o pai fica sempre Pendente como referência, evitando dupla contagem
-  await SB.from('lancamentos').insert({
+  await Q('lancamentos').insert({
     tipo:'Despesa',
     descricao:`${p.descricao} (${p.numero}/${p.total_parcelas})`,
     valor:Number(p.valor),
@@ -3367,13 +3419,13 @@ async function pagarParcelaDespesa(id){
 async function excluirParcelaDespesa(id){
   if(!podeExcluir()){alert('Apenas administradores podem excluir.');return;}
   if(!confirm('Excluir esta parcela?'))return;
-  await SB.from('parcelas_despesa').delete().eq('id',id);
+  await Q('parcelas_despesa').delete().eq('id',id);
   renderParcelasAPagar();renderFinanceiro();
 }
 
 // ── FUNCIONÁRIOS ─────────────────────────────────────────────
 async function renderFuncionarios(){
-  const{data}=await SB.from('funcionarios').select('*').order('nome');
+  const{data}=await Q('funcionarios').select('*').order('nome');
   const f=data||[];
   document.getElementById('rh-total').textContent=f.length;
   document.getElementById('rh-ativos').textContent=f.filter(x=>x.status==='Ativo').length;
@@ -3389,7 +3441,7 @@ async function salvarFuncionario(){
   const nome=document.getElementById('rh-nome').value.trim();
   const cargo=document.getElementById('rh-cargo').value.trim();
   if(!nome||!cargo){alert('Preencha nome e cargo.');return;}
-  const{error}=await SB.from('funcionarios').insert({nome,cargo,cpf:document.getElementById('rh-cpf').value,salario:Number(document.getElementById('rh-salario').value||0),data_admissao:document.getElementById('rh-admissao').value||null,regime:document.getElementById('rh-regime').value,telefone:document.getElementById('rh-tel').value,status:document.getElementById('rh-status').value});
+  const{error}=await Q('funcionarios').insert({nome,cargo,cpf:document.getElementById('rh-cpf').value,salario:Number(document.getElementById('rh-salario').value||0),data_admissao:document.getElementById('rh-admissao').value||null,regime:document.getElementById('rh-regime').value,telefone:document.getElementById('rh-tel').value,status:document.getElementById('rh-status').value});
   if(error){alert('Erro: '+error.message);return;}
   closeModal('modal-func');['rh-nome','rh-cpf','rh-cargo','rh-salario','rh-tel'].forEach(id=>document.getElementById(id).value='');
   await log('RH','Novo funcionário: '+nome,'Concluído');renderFuncionarios();
@@ -3470,7 +3522,7 @@ async function cbClienteChange(){
   // Preenche o último nº processo do cliente se houver
   const cid=document.getElementById('b-cliente').value;
   if(!cid) return;
-  const{data:p}=await SB.from('processos_cb').select('protocolo')
+  const{data:p}=await Q('processos_cb').select('protocolo')
     .eq('cliente_id',cid).not('protocolo','is',null)
     .order('criado_em',{ascending:false}).limit(1);
   // Só preenche se campo estiver vazio
@@ -3497,7 +3549,7 @@ async function novoProcessoCB(){
 }
 
 async function editarProcessoCB(id){
-  const{data:p}=await SB.from('processos_cb').select('*').eq('id',id).single();
+  const{data:p}=await Q('processos_cb').select('*').eq('id',id).single();
   if(!p) return;
   _cbProcessoEditandoId=id;
   document.getElementById('cb-modal-titulo').textContent='Editar processo — Corpo de Bombeiros';
@@ -3535,7 +3587,7 @@ async function salvarProcesso(){
   if(!podeEditar()){alert('Sem permissão.');return;}
   const cid=document.getElementById('b-cliente').value;
   if(!cid){alert('Selecione o cliente.');return;}
-  const{data:cli}=await SB.from('clientes').select('nome,documento').eq('id',cid).single();
+  const{data:cli}=await Q('clientes').select('nome,documento').eq('id',cid).single();
   const grupo   = document.getElementById('b-grupo').value;
   const tipo    = document.getElementById('b-tipo').value;
   const protocolo=document.getElementById('b-protocolo').value.trim();
@@ -3571,16 +3623,16 @@ async function salvarProcesso(){
   };
   let error;
   if(_cbProcessoEditandoId){
-    ({error}=await SB.from('processos_cb').update(payload).eq('id',_cbProcessoEditandoId));
+    ({error}=await Q('processos_cb').update(payload).eq('id',_cbProcessoEditandoId));
     // Atualiza nº processo mais recente no cliente também na edição
     if(!error && protocolo){
-      await SB.from('clientes').update({ultimo_processo_cb:protocolo}).eq('id',cid);
+      await Q('clientes').update({ultimo_processo_cb:protocolo}).eq('id',cid);
     }
   } else {
-    ({error}=await SB.from('processos_cb').insert(payload));
+    ({error}=await Q('processos_cb').insert(payload));
     // Atualiza nº processo mais recente no cliente
     if(!error && protocolo){
-      await SB.from('clientes').update({ultimo_processo_cb:protocolo}).eq('id',cid);
+      await Q('clientes').update({ultimo_processo_cb:protocolo}).eq('id',cid);
     }
   }
   if(error){alert('Erro: '+error.message);return;}
@@ -3591,7 +3643,7 @@ async function salvarProcesso(){
 }
 
 async function renderBombeiros(){
-  const{data}=await SB.from('processos_cb').select('*').order('criado_em',{ascending:false});
+  const{data}=await Q('processos_cb').select('*').order('criado_em',{ascending:false});
   const procs=data||[];
 
   // Métricas
@@ -3680,7 +3732,7 @@ async function renderBombeiros(){
 // ── SAPS ──────────────────────────────────────────────────────
 async function abrirSAPS(){
   // Popula select com processos que têm nº processo cadastrado
-  const{data:procs}=await SB.from('processos_cb')
+  const{data:procs}=await Q('processos_cb')
     .select('id,protocolo,cliente_nome,cliente_id,grupo,tipo')
     .not('protocolo','is',null)
     .order('criado_em',{ascending:false});
@@ -3724,7 +3776,7 @@ async function sapsPreencherDados(){
   // Busca documento do cliente e remove todos os símbolos
   let doc='—';
   if(cid){
-    const{data:cl}=await SB.from('clientes').select('documento').eq('id',cid).single();
+    const{data:cl}=await Q('clientes').select('documento').eq('id',cid).single();
     // Remove pontos, traços, barras e espaços — deixa só números
     doc=(cl?.documento||'').replace(/[.\-\/\s]/g,'')||'—';
   }
@@ -3757,7 +3809,7 @@ function copiarTexto(elementId){
 }
 
 async function verTimeline(id){
-  const{data:p}=await SB.from('processos_cb').select('*').eq('id',id).single();
+  const{data:p}=await Q('processos_cb').select('*').eq('id',id).single();
   if(!p)return;
   _tlProcessoId=id;
 
@@ -3853,7 +3905,7 @@ let _tlProcessoId=null;
 
 async function marcarEtapaCBSub(id, campo, etapa){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:p}=await SB.from('processos_cb').select('etapa_projeto,etapa_vistoria,status_projeto,status_vistoria').eq('id',id).single();
+  const{data:p}=await Q('processos_cb').select('etapa_projeto,etapa_vistoria,status_projeto,status_vistoria').eq('id',id).single();
   const curVal = p?.[campo];
   const novo = curVal===etapa ? null : etapa;
   const upd={[campo]:novo};
@@ -3885,7 +3937,7 @@ async function marcarEtapaCBSub(id, campo, etapa){
   else if(spFinal==='Pendente'||svFinal==='Pendente')   upd.status='Pendente';
   else                                                   upd.status='Em análise';
 
-  await SB.from('processos_cb').update(upd).eq('id',id);
+  await Q('processos_cb').update(upd).eq('id',id);
   log('Bombeiros',`Sub-etapa: ${campo} → ${novo||'desmarcada'}`, novo||'Pendente');
   renderBombeiros();
   verTimeline(id);
@@ -3896,7 +3948,7 @@ async function avancarEtapaSub(id, campo){
   const ETAPAS_PROJETO=['Levantamento e projeto','Pagamento de taxas','Protocolo no CB','Análise técnica','Aprovação do projeto'];
   const ETAPAS_VISTORIA=['Agendamento de vistoria','Vistoria realizada','Aprovação final','AVCB emitido'];
   const etapas = campo==='etapa_projeto' ? ETAPAS_PROJETO : ETAPAS_VISTORIA;
-  const{data:p}=await SB.from('processos_cb').select(campo).eq('id',id).single();
+  const{data:p}=await Q('processos_cb').select(campo).eq('id',id).single();
   const cur = p?.[campo];
   const idx = cur ? etapas.indexOf(cur) : -1;
   if(idx>=etapas.length-1){alert('Última etapa desta fase.');return;}
@@ -3905,11 +3957,11 @@ async function avancarEtapaSub(id, campo){
 
 async function avancarEtapa(id){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:p}=await SB.from('processos_cb').select('*').eq('id',id).single();
+  const{data:p}=await Q('processos_cb').select('*').eq('id',id).single();
   const idx=ETAPAS_CB.indexOf(p.etapa);
   if(idx>=ETAPAS_CB.length-1){alert('Processo já na etapa final.');return;}
   const novaEtapa=ETAPAS_CB[idx+1];
-  await SB.from('processos_cb').update({etapa:novaEtapa}).eq('id',id);
+  await Q('processos_cb').update({etapa:novaEtapa}).eq('id',id);
   await log('Bombeiros',`${p.cliente_nome}: avançado para "${novaEtapa}"`,novaEtapa);
   renderBombeiros();
   verTimeline(id);
@@ -3918,7 +3970,7 @@ async function avancarEtapa(id){
 // ── USUÁRIOS ─────────────────────────────────────────────────
 async function renderUsuarios(){
   if(!isAdmin()){document.getElementById('tabela-usuarios').innerHTML='<div class="empty">Acesso restrito a administradores.</div>';return;}
-  const{data}=await SB.from('perfis').select('id,nome,usuario,nivel,ativo,criado_em').order('nome');
+  const{data}=await Q('perfis').select('id,nome,usuario,nivel,ativo,criado_em').order('nome');
   const el=document.getElementById('tabela-usuarios');
   if(!data||!data.length){el.innerHTML='<div class="empty">Nenhum usuário cadastrado.</div>';return;}
   el.innerHTML=`<table>
@@ -3962,10 +4014,10 @@ async function criarUsuario(){
   if(senha.length<6){erroEl.textContent='Senha deve ter pelo menos 6 caracteres.';return;}
   if(!/^[a-z0-9._-]+$/.test(usuario)){erroEl.textContent='Usuário só pode ter letras minúsculas, números, ponto, traço e underscore.';return;}
   // Verifica se usuário já existe
-  const{data:existe}=await SB.from('perfis').select('id').eq('usuario',usuario).single();
+  const{data:existe}=await Q('perfis').select('id').eq('usuario',usuario).single();
   if(existe){erroEl.textContent='Este nome de usuário já está em uso.';return;}
   const senha_hash=await _hashSenha(senha);
-  const{error}=await SB.from('perfis').insert({nome,usuario,senha_hash,nivel,ativo:true});
+  const{error}=await Q('perfis').insert({nome,usuario,senha_hash,nivel,ativo:true});
   if(error){erroEl.textContent='Erro: '+error.message;return;}
   await log('Usuários',`Usuário criado: ${nome} (${usuario}) — nível: ${nivel}`,'Ativo');
   closeModal('modal-usuario');
@@ -3977,17 +4029,17 @@ async function abrirResetSenha(id, nome){
   if(!nova) return;
   if(nova.length<6){alert('Senha muito curta. Mínimo 6 caracteres.');return;}
   const senha_hash=await _hashSenha(nova);
-  await SB.from('perfis').update({senha_hash}).eq('id',id);
+  await Q('perfis').update({senha_hash}).eq('id',id);
   alert(`Senha de "${nome}" redefinida com sucesso.`);
   log('Usuários',`Senha redefinida para: ${nome}`,'Concluído');
 }
 
 async function alterarNivel(uid,nivel){
-  await SB.from('perfis').update({nivel}).eq('id',uid);
+  await Q('perfis').update({nivel}).eq('id',uid);
   renderUsuarios();
 }
 async function toggleAtivo(uid,ativo){
-  await SB.from('perfis').update({ativo:!ativo}).eq('id',uid);
+  await Q('perfis').update({ativo:!ativo}).eq('id',uid);
   renderUsuarios();
 }
 async function convidarUsuario(){ criarUsuario(); } // alias de compatibilidade
@@ -3996,7 +4048,7 @@ async function convidarUsuario(){ criarUsuario(); } // alias de compatibilidade
 async function excluir(tabela,id){
   if(!podeExcluir()){alert('Apenas administradores podem excluir registros.');return;}
   if(!confirm('Confirma a exclusão deste registro?'))return;
-  await SB.from(tabela).delete().eq('id',id);
+  await Q(tabela).delete().eq('id',id);
   const fn={clientes:renderClientes,vendas:renderVendas,lancamentos:renderFinanceiro,funcionarios:renderFuncionarios,processos_cb:renderBombeiros};
   if(fn[tabela])fn[tabela]();
   renderDashboard();
@@ -4047,7 +4099,7 @@ const CONFIG = {
 const EMPRESA = CONFIG.empresa;
 
 async function renderOrcamentos(){
-  const{data}=await SB.from('orcamentos').select('*').order('numero',{ascending:false});
+  const{data}=await Q('orcamentos').select('*').order('numero',{ascending:false});
   _orcamentos=data||[];
   const aprov=_orcamentos.filter(o=>o.status==='Aprovado');
   const env=_orcamentos.filter(o=>o.status==='Enviado');
@@ -4123,15 +4175,15 @@ async function novoOrcamento(){
 async function abrirOrcamento(id){
   ORC_ATIVO=id;
   const[{data:o},{data:itens}]=await Promise.all([
-    SB.from('orcamentos').select('*').eq('id',id).single(),
-    SB.from('itens_orcamento').select('*').eq('orcamento_id',id).order('numero_item'),
+    Q('orcamentos').select('*').eq('id',id).single(),
+    Q('itens_orcamento').select('*').eq('orcamento_id',id).order('numero_item'),
   ]);
   _itensOrc=itens||[];
 
   // Garante que orçamentos antigos também tenham token
   if(!o.token_cliente){
     const novoToken=crypto.randomUUID();
-    await SB.from('orcamentos').update({token_cliente:novoToken}).eq('id',id);
+    await Q('orcamentos').update({token_cliente:novoToken}).eq('id',id);
     o.token_cliente=novoToken;
   }
 
@@ -4185,7 +4237,7 @@ async function preencherDadosCliente(){
   // Busca do cache, ou do banco se necessário
   let cli=_cliLista.find(c=>c.id===cid);
   if(!cli){
-    const{data}=await SB.from('clientes').select('*').eq('id',cid).single();
+    const{data}=await Q('clientes').select('*').eq('id',cid).single();
     cli=data;
   }
   if(!cli) return;
@@ -4225,7 +4277,7 @@ async function salvarOrcamento(){
     observacoes:document.getElementById('orc-obs').value,
   };
   if(ORC_ATIVO){
-    const{error}=await SB.from('orcamentos').update(payload).eq('id',ORC_ATIVO);
+    const{error}=await Q('orcamentos').update(payload).eq('id',ORC_ATIVO);
     if(error){alert('Erro ao salvar: '+error.message);return;}
     await log('Orçamento',`Proposta atualizada — ${cli.nome}: ${titulo}`,payload.status);
   } else {
@@ -4236,7 +4288,7 @@ async function salvarOrcamento(){
     payload.criado_por=null;
     // Gera token único para o portal do cliente
     payload.token_cliente=crypto.randomUUID();
-    const{data:novo,error}=await SB.from('orcamentos').insert(payload).select().single();
+    const{data:novo,error}=await Q('orcamentos').insert(payload).select().single();
     if(error){alert('Erro ao criar: '+error.message);return;}
     ORC_ATIVO=novo.id;
     document.getElementById('orc-modal-titulo').textContent=`Proposta Nº ${String(novo.numero).padStart(5,'0')}`;
@@ -4263,7 +4315,7 @@ async function adicionarItem(){
   if(!desc){alert('Informe a descrição do produto/serviço.');return;}
   if(!qtd||!val){alert('Informe a quantidade e o valor unitário.');return;}
   const num=_itensOrc.length+1;
-  const{data,error}=await SB.from('itens_orcamento').insert({
+  const{data,error}=await Q('itens_orcamento').insert({
     orcamento_id:ORC_ATIVO,
     numero_item:num,
     descricao:desc,
@@ -4288,7 +4340,7 @@ async function adicionarItem(){
 
 async function removerItem(id){
   if(!confirm('Remover este item?'))return;
-  await SB.from('itens_orcamento').delete().eq('id',id);
+  await Q('itens_orcamento').delete().eq('id',id);
   _itensOrc=_itensOrc.filter(i=>i.id!==id);
   _itensOrc.forEach((it,idx)=>it.numero_item=idx+1);
   await _recalcOrcDB();
@@ -4300,7 +4352,7 @@ async function _recalcOrcDB(){
   const subtotal=_itensOrc.reduce((s,i)=>s+Number(i.valor_total||0),0);
   const desconto=parseFloat(document.getElementById('orc-desconto')?.value||0);
   const total=Math.max(0,subtotal-desconto);
-  await SB.from('orcamentos').update({subtotal,valor_total:total}).eq('id',ORC_ATIVO);
+  await Q('orcamentos').update({subtotal,valor_total:total}).eq('id',ORC_ATIVO);
   renderOrcamentos();
 }
 
@@ -4349,8 +4401,8 @@ function renderItensOrc(){
 async function gerarPreviewDoc(){
   if(!ORC_ATIVO)return;
   const[{data:o},{data:itens}]=await Promise.all([
-    SB.from('orcamentos').select('*').eq('id',ORC_ATIVO).single(),
-    SB.from('itens_orcamento').select('*').eq('orcamento_id',ORC_ATIVO).order('numero_item'),
+    Q('orcamentos').select('*').eq('id',ORC_ATIVO).single(),
+    Q('itens_orcamento').select('*').eq('orcamento_id',ORC_ATIVO).order('numero_item'),
   ]);
   if(!o)return;
   const venc=o.data_emissao&&o.validade_dias?
@@ -4505,10 +4557,10 @@ function imprimirOrcamento(){
 
 async function copiarLinkCliente(){
   if(!ORC_ATIVO){alert('Abra uma proposta primeiro.');return;}
-  const{data:o}=await SB.from('orcamentos').select('token_cliente,numero,cliente_nome').eq('id',ORC_ATIVO).single();
+  const{data:o}=await Q('orcamentos').select('token_cliente,numero,cliente_nome').eq('id',ORC_ATIVO).single();
   if(!o?.token_cliente){alert('Token não encontrado. Tente reabrir a proposta.');return;}
   // Salva dados da empresa no orçamento para o portal do cliente
-  await SB.from('orcamentos').update({
+  await Q('orcamentos').update({
     empresa_nome:     CONFIG.empresa.nome,
     empresa_telefone: CONFIG.empresa.telefone,
     empresa_email:    CONFIG.empresa.email,
@@ -4564,7 +4616,7 @@ function calcContratoParcela(){
 
 async function confirmarContratacao(id){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:o}=await SB.from('orcamentos').select('*').eq('id',id).single();
+  const{data:o}=await Q('orcamentos').select('*').eq('id',id).single();
   if(!o)return;
   _orcContrato=o;
   document.getElementById('ct-cliente').textContent=o.cliente_nome||'—';
@@ -4583,7 +4635,7 @@ async function confirmarContratacao(id){
   document.getElementById('ct-parcelas-saldo').value='1';
   document.getElementById('ct-vencimento-saldo').value='';
   document.getElementById('ct-preview-parcela').style.display='none';
-  const{data:funcs}=await SB.from('funcionarios').select('id,nome').eq('status','Ativo').order('nome');
+  const{data:funcs}=await Q('funcionarios').select('id,nome').eq('status','Ativo').order('nome');
   const sel=document.getElementById('ct-responsavel');
   sel.innerHTML='<option value="">Selecione (opcional)</option>';
   (funcs||[]).forEach(f=>sel.innerHTML+=`<option value="${f.id}">${f.nome}</option>`);
@@ -4597,7 +4649,7 @@ async function executarContratacao(){
   const tipo=document.querySelector('input[name="ct-tipo"]:checked')?.value||'igual';
   const respId=document.getElementById('ct-responsavel').value;
   let respNome='';
-  if(respId){const{data:rf}=await SB.from('funcionarios').select('nome').eq('id',respId).single();respNome=rf?.nome||'';}
+  if(respId){const{data:rf}=await Q('funcionarios').select('nome').eq('id',respId).single();respNome=rf?.nome||'';}
   const rows=[];
   if(tipo==='igual'){
     const qtd=parseInt(document.getElementById('ct-parcelas').value||1);
@@ -4628,12 +4680,12 @@ async function executarContratacao(){
   }
   if(!rows.length){alert('Configure pelo menos uma parcela.');return;}
   // Marca proposta como Aprovado
-  await SB.from('orcamentos').update({status:'Aprovado'}).eq('id',o.id);
+  await Q('orcamentos').update({status:'Aprovado'}).eq('id',o.id);
   // Atualiza status do cliente para Ativo automaticamente
   if(o.cliente_id){
-    await SB.from('clientes').update({status:'Ativo'}).eq('id',o.cliente_id);
+    await Q('clientes').update({status:'Ativo'}).eq('id',o.cliente_id);
   }
-  const{data:venda,error:eVenda}=await SB.from('vendas').insert({
+  const{data:venda,error:eVenda}=await Q('vendas').insert({
     cliente_id:o.cliente_id,cliente_nome:o.cliente_nome,servico:o.titulo,
     valor:o.valor_total,etapa:'Fechado',responsavel_nome:respNome,
     data_proposta:hoje(),orcamento_id:o.id,
@@ -4641,7 +4693,7 @@ async function executarContratacao(){
   }).select().single();
   if(eVenda){alert('Erro ao criar venda: '+eVenda.message);return;}
   const parcelas=rows.map(r=>({...r,venda_id:venda.id,venda_servico:o.titulo,cliente_nome:o.cliente_nome}));
-  const{error:eParcelas}=await SB.from('parcelas').insert(parcelas);
+  const{error:eParcelas}=await Q('parcelas').insert(parcelas);
   if(eParcelas){alert('Venda criada, mas erro nas parcelas: '+eParcelas.message);}
   log('Orçamento',`Contrato confirmado — Proposta Nº ${String(o.numero).padStart(5,'0')} → Venda criada`,'Aprovado');
   closeModal('modal-contrato');
@@ -4654,8 +4706,8 @@ async function executarContratacao(){
 async function excluirOrc(id){
   if(!podeExcluir()){alert('Apenas administradores podem excluir.');return;}
   if(!confirm('Excluir esta proposta e todos os seus itens?'))return;
-  await SB.from('itens_orcamento').delete().eq('orcamento_id',id);
-  await SB.from('orcamentos').delete().eq('id',id);
+  await Q('itens_orcamento').delete().eq('orcamento_id',id);
+  await Q('orcamentos').delete().eq('id',id);
   renderOrcamentos();
 }
 // ── IMPORTAR PROPOSTA COM IA ──────────────────────────────────
@@ -4807,11 +4859,11 @@ async function impPreencherRevisao(dados){
   const doc=(cli.documento||'').replace(/\D/g,'');
   let clienteExistente=null;
   if(doc){
-    const{data:c}=await SB.from('clientes').select('id,nome,documento').ilike('documento',`%${doc}%`).limit(1);
+    const{data:c}=await Q('clientes').select('id,nome,documento').ilike('documento',`%${doc}%`).limit(1);
     if(c&&c.length) clienteExistente=c[0];
   }
   if(!clienteExistente&&cli.nome){
-    const{data:c}=await SB.from('clientes').select('id,nome,documento').ilike('nome',`%${cli.nome.split(' ')[0]}%`).limit(1);
+    const{data:c}=await Q('clientes').select('id,nome,documento').ilike('nome',`%${cli.nome.split(' ')[0]}%`).limit(1);
     if(c&&c.length) clienteExistente=c[0];
   }
   if(clienteExistente){
@@ -4866,7 +4918,7 @@ async function impCriarOrcamento(){
     let clienteId=statusEl.dataset.clienteId||'';
     if(!clienteId){
       // Cria o cliente
-      const{data:novoCli,error:eCli}=await SB.from('clientes').insert({
+      const{data:novoCli,error:eCli}=await Q('clientes').insert({
         nome:     nomeCliente,
         documento:document.getElementById('imp-cli-doc').value||'',
         telefone: document.getElementById('imp-cli-tel').value||'',
@@ -4882,7 +4934,7 @@ async function impCriarOrcamento(){
     }
 
     // 2. Busca dados completos do cliente
-    const{data:cli}=await SB.from('clientes').select('*').eq('id',clienteId).single();
+    const{data:cli}=await Q('clientes').select('*').eq('id',clienteId).single();
 
     // 3. Gera número da proposta via sequence
     const{data:seqData,error:seqErr}=await SB.rpc('proximo_numero_orcamento');
@@ -4904,7 +4956,7 @@ async function impCriarOrcamento(){
 
     // 5. Cria o orçamento
     const titulo=document.getElementById('imp-titulo').value||'Proposta importada';
-    const{data:orc,error:eOrc}=await SB.from('orcamentos').insert({
+    const{data:orc,error:eOrc}=await Q('orcamentos').insert({
       numero:       seqData,
       cliente_id:   clienteId,
       cliente_nome: cli.nome,
@@ -4931,7 +4983,7 @@ async function impCriarOrcamento(){
     // 6. Insere itens
     if(itensPayload.length){
       const rows=itensPayload.map(it=>({...it,orcamento_id:orc.id}));
-      await SB.from('itens_orcamento').insert(rows);
+      await Q('itens_orcamento').insert(rows);
     }
 
     log('Orçamento',`Proposta importada Nº ${String(seqData).padStart(5,'0')} — ${cli.nome}`,'Rascunho');
@@ -5000,12 +5052,12 @@ async function renderCalendario(){
 }
 
 async function calCarregarListas(){
-  const{data}=await SB.from('listas_tarefas').select('*').order('criado_em');
+  const{data}=await Q('listas_tarefas').select('*').order('criado_em');
   _calListas=data||[];
 }
 
 async function calCarregarTarefas(){
-  const{data}=await SB.from('tarefas').select('*').order('data').order('hora');
+  const{data}=await Q('tarefas').select('*').order('data').order('hora');
   _calTarefas=data||[];
 }
 
@@ -5072,7 +5124,7 @@ function calFecharNovaLista(){
 async function calCriarLista(){
   const nome=document.getElementById('cal-nova-lista-input').value.trim();
   if(!nome) return;
-  const{data,error}=await SB.from('listas_tarefas').insert({nome}).select().single();
+  const{data,error}=await Q('listas_tarefas').insert({nome}).select().single();
   if(error){alert('Erro: '+error.message);return;}
   _calListas.push(data);
   _calListaSel=data.id;
@@ -5086,8 +5138,8 @@ async function calExcluirLista(id, nome){
     ?`Excluir a lista "${nome}" e suas ${count} tarefa${count>1?'s':''}?`
     :`Excluir a lista "${nome}"?`;
   if(!confirm(msg)) return;
-  await SB.from('tarefas').delete().eq('lista_id',id);
-  await SB.from('listas_tarefas').delete().eq('id',id);
+  await Q('tarefas').delete().eq('lista_id',id);
+  await Q('listas_tarefas').delete().eq('id',id);
   _calListas=_calListas.filter(l=>l.id!==id);
   _calTarefas=_calTarefas.filter(t=>t.lista_id!==id);
   if(_calListaSel===id) _calListaSel=null;
@@ -5219,12 +5271,12 @@ async function calQuickAdd(){
   let listaId=_calListaSel;
   if(!listaId&&_calListas.length) listaId=_calListas[0].id;
   if(!listaId){
-    const{data:novaLista}=await SB.from('listas_tarefas').insert({nome:'Geral'}).select().single();
+    const{data:novaLista}=await Q('listas_tarefas').insert({nome:'Geral'}).select().single();
     if(novaLista){_calListas.push(novaLista);listaId=novaLista.id;}
   }
   if(!listaId){alert('Crie uma lista primeiro.');return;}
 
-  const{data,error}=await SB.from('tarefas')
+  const{data,error}=await Q('tarefas')
     .insert({titulo,lista_id:listaId,tipo:'Tarefa',status:'Pendente'})
     .select().single();
 
@@ -5241,7 +5293,7 @@ async function calQuickAdd(){
 }
 
 async function calCancelarTarefa(id){
-  await SB.from('tarefas').update({status:'Cancelada'}).eq('id',id);
+  await Q('tarefas').update({status:'Cancelada'}).eq('id',id);
   const idx=_calTarefas.findIndex(t=>t.id===id);
   if(idx>=0) _calTarefas[idx]={..._calTarefas[idx],status:'Cancelada'};
   if(_gcalIniciado){
@@ -5254,8 +5306,8 @@ async function calCancelarTarefa(id){
 
 async function calExcluirTarefaDireto(id, titulo){
   if(!confirm(`Excluir "${titulo}"?\n\nEsta ação não pode ser desfeita.`)) return;
-  const{data:t}=await SB.from('tarefas').select('gcal_event_id').eq('id',id).single();
-  await SB.from('tarefas').delete().eq('id',id);
+  const{data:t}=await Q('tarefas').select('gcal_event_id').eq('id',id).single();
+  await Q('tarefas').delete().eq('id',id);
   if(t?.gcal_event_id&&_gcalIniciado) await gcalExcluirEvento(t.gcal_event_id);
   _calTarefas=_calTarefas.filter(x=>x.id!==id);
   calRenderConteudo();
@@ -5263,7 +5315,7 @@ async function calExcluirTarefaDireto(id, titulo){
 }
 
 async function calToggleConcluida(id, concluida){
-  await SB.from('tarefas').update({status:concluida?'Concluída':'Pendente'}).eq('id',id);
+  await Q('tarefas').update({status:concluida?'Concluída':'Pendente'}).eq('id',id);
   const idx=_calTarefas.findIndex(t=>t.id===id);
   if(idx>=0) _calTarefas[idx]={..._calTarefas[idx],status:concluida?'Concluída':'Pendente'};
   // Atualiza no Google Calendar se conectado
@@ -5328,7 +5380,7 @@ async function calPopularModalListas(selId){
 
 async function calCarregarResponsaveis(sel=''){
   const s=document.getElementById('tar-responsavel');
-  const{data}=await SB.from('funcionarios').select('nome').eq('status','Ativo').order('nome');
+  const{data}=await Q('funcionarios').select('nome').eq('status','Ativo').order('nome');
   s.innerHTML='<option value="">— Selecione —</option>'+
     (data||[]).map(f=>`<option ${f.nome===sel?'selected':''}>${f.nome}</option>`).join('');
 }
@@ -5353,15 +5405,15 @@ async function salvarTarefa(){
   };
   let error,data;
   if(_tarEditId){
-    ({error}=await SB.from('tarefas').update(payload).eq('id',_tarEditId));
+    ({error}=await Q('tarefas').update(payload).eq('id',_tarEditId));
     if(!error&&_gcalIniciado){
-      const{data:t}=await SB.from('tarefas').select('gcal_event_id').eq('id',_tarEditId).single();
+      const{data:t}=await Q('tarefas').select('gcal_event_id').eq('id',_tarEditId).single();
       await gcalAtualizarEvento({...payload,id:_tarEditId,gcal_event_id:t?.gcal_event_id});
     }
     const idx=_calTarefas.findIndex(t=>t.id===_tarEditId);
     if(idx>=0) _calTarefas[idx]={..._calTarefas[idx],...payload};
   } else {
-    ({error,data}=await SB.from('tarefas').insert(payload).select().single());
+    ({error,data}=await Q('tarefas').insert(payload).select().single());
     if(!error&&data){
       _calTarefas.push(data);
       // Usa variável separada para evitar colisão com 'data' do destructuring
@@ -5386,8 +5438,8 @@ async function cancelarTarefaModal(){
 async function excluirTarefa(){
   if(!_tarEditId) return;
   if(!confirm('Excluir esta tarefa?')) return;
-  const{data:t}=await SB.from('tarefas').select('gcal_event_id').eq('id',_tarEditId).single();
-  await SB.from('tarefas').delete().eq('id',_tarEditId);
+  const{data:t}=await Q('tarefas').select('gcal_event_id').eq('id',_tarEditId).single();
+  await Q('tarefas').delete().eq('id',_tarEditId);
   if(t?.gcal_event_id&&_gcalIniciado) await gcalExcluirEvento(t.gcal_event_id);
   _calTarefas=_calTarefas.filter(t=>t.id!==_tarEditId);
   log('Calendário','Tarefa excluída','Excluído');
@@ -5806,7 +5858,7 @@ async function gcalCriarEvento(t){
       resource:evento,
     });
     if(resp.result?.id){
-      await SB.from('tarefas').update({gcal_event_id:resp.result.id}).eq('id',t.id);
+      await Q('tarefas').update({gcal_event_id:resp.result.id}).eq('id',t.id);
       const idx=_calTarefas.findIndex(x=>x.id===t.id);
       if(idx>=0) _calTarefas[idx].gcal_event_id=resp.result.id;
       gcalMostrarStatus(`📅 "${t.titulo}" adicionado ao Google Calendar`,'var(--green-bg)','var(--green)');
@@ -5888,7 +5940,7 @@ async function gcalImportarEventosExternos(){
     // Garante lista padrão para importações
     let listaImportId=_calListas.find(l=>l.nome==='Google Calendar')?.id;
     if(!listaImportId){
-      const{data:novaLista}=await SB.from('listas_tarefas')
+      const{data:novaLista}=await Q('listas_tarefas')
         .insert({nome:'Google Calendar'}).select().single();
       if(novaLista){
         _calListas.push(novaLista);
@@ -5926,7 +5978,7 @@ async function gcalImportarEventosExternos(){
         lembrete_min: null,
       };
 
-      const{data:nova,error}=await SB.from('tarefas').insert(payload).select().single();
+      const{data:nova,error}=await Q('tarefas').insert(payload).select().single();
       if(!error&&nova){
         _calTarefas.push(nova);
         importados++;
@@ -5977,7 +6029,7 @@ const STATUS_CORES={
 
 async function copiarLinkObraCliente(){
   if(!_ganttOrcId){return;}
-  const{data:o}=await SB.from('orcamentos').select('token_cliente,cliente_nome').eq('id',_ganttOrcId).single();
+  const{data:o}=await Q('orcamentos').select('token_cliente,cliente_nome').eq('id',_ganttOrcId).single();
   if(!o?.token_cliente){alert('Token não encontrado.');return;}
   const link=`${window.location.origin}/cliente.html?token=${o.token_cliente}`;
   try{
@@ -5995,7 +6047,7 @@ async function renderGanttPage(){
 
 async function renderGanttDashboard(){
   // Busca todas obras aprovadas + seus itens
-  const{data:obras}=await SB.from('orcamentos')
+  const{data:obras}=await Q('orcamentos')
     .select('id,numero,titulo,cliente_nome,valor_total,data_emissao,validade_dias,prazo_execucao')
     .eq('status','Aprovado')
     .order('numero',{ascending:false});
@@ -6011,7 +6063,7 @@ async function renderGanttDashboard(){
 
   // Busca itens de todas as obras de uma vez
   const obraIds=obras.map(o=>o.id);
-  const{data:todosItens}=await SB.from('itens_orcamento')
+  const{data:todosItens}=await Q('itens_orcamento')
     .select('orcamento_id,status_execucao,progresso,data_inicio_prevista,data_fim_prevista')
     .in('orcamento_id',obraIds);
 
@@ -6183,9 +6235,9 @@ async function carregarGantt(id){
   if(!id)return;
   _ganttOrcId=id;
   const[{data:orc},{data:itens},{data:comentarios}]=await Promise.all([
-    SB.from('orcamentos').select('*').eq('id',id).single(),
-    SB.from('itens_orcamento').select('*').eq('orcamento_id',id).order('numero_item'),
-    SB.from('gantt_comentarios').select('*').eq('orcamento_id',id).order('criado_em'),
+    Q('orcamentos').select('*').eq('id',id).single(),
+    Q('itens_orcamento').select('*').eq('orcamento_id',id).order('numero_item'),
+    Q('gantt_comentarios').select('*').eq('orcamento_id',id).order('criado_em'),
   ]);
   _ganttOrc=orc;
   _ganttItens=itens||[];
@@ -6194,7 +6246,7 @@ async function carregarGantt(id){
   // Carrega contagem de subitens para exibir badges na tabela
   if(_ganttItens.length){
     const itemIds=_ganttItens.map(i=>i.id);
-    const{data:todosSubitens}=await SB.from('subitens_item').select('item_id,concluido').in('item_id',itemIds);
+    const{data:todosSubitens}=await Q('subitens_item').select('item_id,concluido').in('item_id',itemIds);
     if(todosSubitens){
       _ganttItens=_ganttItens.map(i=>{
         const subs=todosSubitens.filter(s=>s.item_id===i.id);
@@ -6247,7 +6299,7 @@ async function salvarDatasObra(){
     alert('A data de início não pode ser posterior à data de fim.');
     return;
   }
-  await SB.from('orcamentos').update({
+  await Q('orcamentos').update({
     data_inicio_obra: ini,
     data_fim_obra:    fim,
   }).eq('id',_ganttOrcId);
@@ -6407,8 +6459,8 @@ async function editarItemGantt(id){
 
   // Busca responsáveis e subitens em paralelo
   const[{data:funcs},{data:subs}]=await Promise.all([
-    SB.from('funcionarios').select('nome').eq('status','Ativo').order('nome'),
-    SB.from('subitens_item').select('*').eq('item_id',id).order('criado_em'),
+    Q('funcionarios').select('nome').eq('status','Ativo').order('nome'),
+    Q('subitens_item').select('*').eq('item_id',id).order('criado_em'),
   ]);
   _subItensAtivos[id]=subs||[];
 
@@ -6482,7 +6534,7 @@ async function adicionarSubItem(itemId){
   const input=document.getElementById(`ge-sub-novo-${itemId}`);
   const desc=(input?.value||'').trim();
   if(!desc){input?.focus();return;}
-  const{data,error}=await SB.from('subitens_item').insert({
+  const{data,error}=await Q('subitens_item').insert({
     item_id:itemId,
     descricao:desc,
     concluido:false,
@@ -6496,7 +6548,7 @@ async function adicionarSubItem(itemId){
 }
 
 async function toggleSubItem(itemId, subId, concluido){
-  await SB.from('subitens_item').update({concluido}).eq('id',subId);
+  await Q('subitens_item').update({concluido}).eq('id',subId);
   const subs=_subItensAtivos[itemId]||[];
   const idx=subs.findIndex(s=>s.id===subId);
   if(idx>=0) subs[idx]={...subs[idx],concluido};
@@ -6506,7 +6558,7 @@ async function toggleSubItem(itemId, subId, concluido){
 
 async function excluirSubItem(itemId, subId){
   if(!confirm('Excluir este subitem?')) return;
-  await SB.from('subitens_item').delete().eq('id',subId);
+  await Q('subitens_item').delete().eq('id',subId);
   _subItensAtivos[itemId]=(_subItensAtivos[itemId]||[]).filter(s=>s.id!==subId);
   document.getElementById(`ge-subs-lista-${itemId}`).innerHTML=renderSubItensLista(itemId);
   await recalcularProgressoSubItens(itemId);
@@ -6533,7 +6585,7 @@ async function recalcularProgressoSubItens(itemId){
   if(label) label.textContent=pct+'%';
   // Persiste no banco
   const status=pct===100?'Concluído':pct>0?'Em andamento':'Pendente';
-  await SB.from('itens_orcamento').update({progresso:pct,status_execucao:status}).eq('id',itemId);
+  await Q('itens_orcamento').update({progresso:pct,status_execucao:status}).eq('id',itemId);
   const idx=_ganttItens.findIndex(i=>i.id===itemId);
   if(idx>=0) _ganttItens[idx]={..._ganttItens[idx],progresso:pct,status_execucao:status};
   renderGanttMetricas();
@@ -6561,7 +6613,7 @@ async function salvarItemGantt(id){
   const fim    = document.getElementById(`ge-fim-${id}`).value;
   const resp   = document.getElementById(`ge-resp-${id}`).value;
 
-  const{error}=await SB.from('itens_orcamento').update({
+  const{error}=await Q('itens_orcamento').update({
     status_execucao:      status,
     progresso:            progresso,
     data_inicio_prevista: ini||null,
@@ -6609,7 +6661,7 @@ async function salvarDatasGantt(){
     fim: document.getElementById(`gd-fim-${i.id}`)?.value||null,
   }));
   for(const u of updates){
-    await SB.from('itens_orcamento').update({
+    await Q('itens_orcamento').update({
       data_inicio_prevista: u.ini,
       data_fim_prevista:    u.fim,
     }).eq('id',u.id);
@@ -6643,7 +6695,7 @@ function renderComentarios(lista){
 async function enviarComentario(){
   const texto=document.getElementById('gantt-novo-comentario').value.trim();
   if(!texto||!_ganttOrcId){alert('Escreva um comentário.');return;}
-  const{error}=await SB.from('gantt_comentarios').insert({
+  const{error}=await Q('gantt_comentarios').insert({
     orcamento_id: _ganttOrcId,
     texto,
     autor:       'JPM',
@@ -6652,7 +6704,7 @@ async function enviarComentario(){
   if(error){alert('Erro: '+error.message);return;}
   document.getElementById('gantt-novo-comentario').value='';
   // Recarrega comentários
-  const{data}=await SB.from('gantt_comentarios').select('*').eq('orcamento_id',_ganttOrcId).order('criado_em');
+  const{data}=await Q('gantt_comentarios').select('*').eq('orcamento_id',_ganttOrcId).order('criado_em');
   renderComentarios(data||[]);
   carregarNotificacoes();
 }
@@ -6675,7 +6727,7 @@ async function renderGanttFinanceiro(){
   const el=document.getElementById('gantt-financeiro');
   if(!el||!_ganttOrcId||!_ganttOrc)return;
 
-  const{data:despesas}=await SB.from('lancamentos')
+  const{data:despesas}=await Q('lancamentos')
     .select('*')
     .eq('orcamento_id',_ganttOrcId)
     .eq('tipo','Despesa')
@@ -6770,7 +6822,7 @@ async function renderGanttFinanceiro(){
 async function excluirLancObra(id){
   if(!podeExcluir()){alert('Apenas administradores podem excluir.');return;}
   if(!confirm('Excluir este lançamento?'))return;
-  await SB.from('lancamentos').delete().eq('id',id);
+  await Q('lancamentos').delete().eq('id',id);
   renderGanttFinanceiro();
   renderFinanceiro();
 }
@@ -6847,11 +6899,11 @@ async function carregarNotificacoes(){
   const hoje_d = new Date(hoje()+'T00:00:00');
 
   // ── 1. OBRAS COM PRAZO PRÓXIMO OU ATRASADO ────────────────
-  const{data:obras}=await SB.from('orcamentos')
+  const{data:obras}=await Q('orcamentos')
     .select('id,numero,titulo,cliente_nome').eq('status','Aprovado');
   if(obras?.length){
     const obraIds=obras.map(o=>o.id);
-    const{data:itens}=await SB.from('itens_orcamento')
+    const{data:itens}=await Q('itens_orcamento')
       .select('orcamento_id,data_fim_prevista,status_execucao,progresso')
       .in('orcamento_id',obraIds);
     obras.forEach(o=>{
@@ -6885,7 +6937,7 @@ async function carregarNotificacoes(){
   }
 
   // ── 2. NOVAS MENSAGENS DE CLIENTES ───────────────────────
-  const{data:msgs}=await SB.from('gantt_comentarios')
+  const{data:msgs}=await Q('gantt_comentarios')
     .select('id,orcamento_id,autor,texto,criado_em')
     .eq('tipo_usuario','cliente')
     .order('criado_em',{ascending:false})
@@ -6912,7 +6964,7 @@ async function carregarNotificacoes(){
   }
 
   // ── 3. PARCELAS VENCIDAS ──────────────────────────────────
-  const{data:parcVenc}=await SB.from('parcelas')
+  const{data:parcVenc}=await Q('parcelas')
     .select('id,cliente_nome,venda_servico,valor,data_vencimento')
     .eq('status','Pendente')
     .lt('data_vencimento',hoje());
@@ -6927,7 +6979,7 @@ async function carregarNotificacoes(){
 
   // ── 4. PARCELAS VENCENDO EM ATÉ 3 DIAS ───────────────────
   const d3=new Date(hoje_d.getTime()+3*86400000).toISOString().split('T')[0];
-  const{data:parcProx}=await SB.from('parcelas')
+  const{data:parcProx}=await Q('parcelas')
     .select('id,cliente_nome,valor,data_vencimento')
     .eq('status','Pendente')
     .gte('data_vencimento',hoje())
@@ -6942,7 +6994,7 @@ async function carregarNotificacoes(){
   }
 
   // ── 5. PROCESSOS CB COM PRAZO PRÓXIMO ────────────────────
-  const{data:procs}=await SB.from('processos_cb')
+  const{data:procs}=await Q('processos_cb')
     .select('id,cliente_nome,tipo,prazo,etapa')
     .neq('etapa','AVCB emitido');
   if(procs?.length){
@@ -6966,7 +7018,7 @@ async function carregarNotificacoes(){
   }
 
   // ── 6. PROPOSTAS COM VALIDADE VENCENDO ───────────────────
-  const{data:props}=await SB.from('orcamentos')
+  const{data:props}=await Q('orcamentos')
     .select('id,numero,titulo,cliente_nome,data_emissao,validade_dias')
     .in('status',['Rascunho','Enviado']);
   if(props?.length){
@@ -7079,7 +7131,7 @@ function mostrarNotificacao(titulo, texto, tipo='info'){
 async function renderConfig(){
   if(!isAdmin()) return;
   // Carrega config salva no banco (tabela config_empresa)
-  const{data}=await SB.from('config_empresa').select('*').limit(1).maybeSingle();
+  const{data}=await Q('config_empresa').select('*').limit(1).maybeSingle();
   const cfg=data||{};
   // Preenche campos com valores do banco ou fallback do CONFIG local
   const campos={
@@ -7142,12 +7194,12 @@ async function salvarConfig(){
   statusEl.textContent='Salvando...';
 
   // Upsert — cria ou atualiza o único registro
-  const{data:existing}=await SB.from('config_empresa').select('id').limit(1).maybeSingle();
+  const{data:existing}=await Q('config_empresa').select('id').limit(1).maybeSingle();
   let error;
   if(existing?.id){
-    ({error}=await SB.from('config_empresa').update(payload).eq('id',existing.id));
+    ({error}=await Q('config_empresa').update(payload).eq('id',existing.id));
   } else {
-    ({error}=await SB.from('config_empresa').insert(payload));
+    ({error}=await Q('config_empresa').insert(payload));
   }
 
   if(error){
@@ -7172,7 +7224,7 @@ async function salvarConfig(){
 // Carrega config do banco ao iniciar o app
 async function carregarConfigEmpresa(){
   try{
-    const{data}=await SB.from('config_empresa').select('*').limit(1).maybeSingle();
+    const{data}=await Q('config_empresa').select('*').limit(1).maybeSingle();
     if(data){
       // Sobrescreve CONFIG.empresa com valores do banco
       if(data.nome)     CONFIG.empresa.nome     =data.nome;
