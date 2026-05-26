@@ -276,6 +276,7 @@ tr:hover td{background:var(--surface2)}
       <div class="nav-section" id="nav-admin-section" style="display:none">administração</div>
       <div class="nav-item" id="nav-usuarios" style="display:none" onclick="showPage('usuarios',this)"><span class="nav-icon">◧</span> Usuários</div>
       <div class="nav-item" id="nav-config" style="display:none" onclick="showPage('config',this)"><span class="nav-icon">⚙</span> Configurações</div>
+      <div class="nav-item" onclick="showPage('assistente',this)"><span class="nav-icon">✦</span> Assistente IA</div>
     </div>
 
     <div class="main">
@@ -848,7 +849,108 @@ tr:hover td{background:var(--surface2)}
     </div>
   </div>
 </div>
-<!-- ══ MODAIS ══ -->
+      <!-- ASSISTENTE IA -->
+      <div class="page" id="page-assistente">
+        <div class="page-title">Assistente IA</div>
+        <div class="page-sub">Especialista em segurança contra incêndio — normas CBMRN, ABNT e cálculos hidráulicos</div>
+
+        <div style="display:flex;gap:16px;height:calc(100vh - 180px);min-height:500px">
+
+          <!-- Histórico de conversas -->
+          <div style="width:240px;flex-shrink:0;display:flex;flex-direction:column;gap:8px">
+            <button onclick="iaNovaCONVERSA()" class="btn btn-primary btn-sm" style="width:100%;justify-content:center">+ Nova conversa</button>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);padding:4px 0">Histórico</div>
+            <div id="ia-historico-lista" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+          </div>
+
+          <!-- Chat principal -->
+          <div class="card" style="flex:1;display:flex;flex-direction:column;padding:0;overflow:hidden">
+            <!-- Header do chat -->
+            <div style="padding:14px 18px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:10px">
+              <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">✦</div>
+              <div>
+                <div style="font-size:13px;font-weight:600" id="ia-conv-titulo">Nova conversa</div>
+                <div style="font-size:11px;color:var(--text3)">Especialista CBMRN · Normas ABNT · Cálculos hidráulicos</div>
+              </div>
+              <div id="ia-status-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--green)"></div>
+            </div>
+
+            <!-- Mensagens -->
+            <div id="ia-msgs-full" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px">
+              <div id="ia-boas-vindas" style="text-align:center;padding:40px 20px">
+                <div style="font-size:40px;margin-bottom:12px">🔥</div>
+                <div style="font-size:16px;font-weight:600;margin-bottom:8px">Assistente de Engenharia de Incêndio</div>
+                <div style="font-size:13px;color:var(--text2);max-width:400px;margin:0 auto;line-height:1.6">
+                  Especializado nas normas do CBMRN, ABNT e cálculos hidráulicos. Pergunte sobre ITs, dimensionamento de sistemas, classificação de edificações e muito mais.
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:20px">
+                  ${['Qual IT rege sistemas de hidrantes?','Como classificar uma edificação residencial?','Calcular pressão residual num hidrante','Quando é exigido chuveiro automático?','Brigada de incêndio: quantos membros?','Saídas de emergência: largura mínima?'].map(s=>`<button onclick="iaEnviarSugestao('${s}')" style="padding:6px 12px;border:0.5px solid var(--border2);border-radius:20px;font-size:12px;background:var(--surface2);cursor:pointer;color:var(--text)">${s}</button>`).join('')}
+                </div>
+              </div>
+            </div>
+
+            <!-- Input -->
+            <div style="padding:14px 16px;border-top:0.5px solid var(--border)">
+              <div style="display:flex;gap:8px;align-items:flex-end">
+                <textarea id="ia-input-full" placeholder="Faça sua pergunta sobre normas, cálculos ou procedimentos..."
+                  style="flex:1;padding:10px 14px;border:0.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;resize:none;height:44px;max-height:120px;background:var(--surface);color:var(--text);line-height:1.5"
+                  oninput="this.style.height='44px';this.style.height=Math.min(this.scrollHeight,120)+'px'"
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();iaEnviar('full')}"></textarea>
+                <button onclick="iaEnviar('full')" id="ia-btn-full"
+                  style="width:44px;height:44px;border-radius:var(--r);background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">
+                  ➤
+                </button>
+              </div>
+              <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:center">
+                Baseado nas ITs do CBMRN 2022/2025 · Resoluções Técnicas · NBR ABNT · Shift+Enter para nova linha
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+<!-- CHAT FLUTUANTE IA -->
+<div id="ia-fab" onclick="iaToggleFloat()"
+  style="position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 4px 20px rgba(99,102,241,.4);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:22px;z-index:9998;transition:transform .2s;border:none"
+  title="Assistente IA"
+  onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
+  ✦
+  <span id="ia-fab-badge" style="display:none;position:absolute;top:-2px;right:-2px;width:16px;height:16px;background:var(--red);border-radius:50%;font-size:9px;color:#fff;align-items:center;justify-content:center;font-weight:700">!</span>
+</div>
+
+<div id="ia-float-panel" style="display:none;position:fixed;bottom:88px;right:24px;width:360px;height:480px;background:var(--surface);border:0.5px solid var(--border);border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.15);z-index:9997;flex-direction:column;overflow:hidden">
+  <!-- Header float -->
+  <div style="padding:12px 16px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;gap:10px">
+    <div style="font-size:18px">✦</div>
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:700;color:#fff">Assistente IA</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.75)">CBMRN · ABNT · Hidráulica</div>
+    </div>
+    <button onclick="iaToggleFloat()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;padding:4px 8px;color:#fff;cursor:pointer;font-size:12px">✕</button>
+    <button onclick="showPage('assistente',document.querySelector('[onclick*=assistente]'));iaToggleFloat()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;padding:4px 8px;color:#fff;cursor:pointer;font-size:10px">↗ Expandir</button>
+  </div>
+  <!-- Msgs float -->
+  <div id="ia-msgs-float" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px">
+    <div style="text-align:center;padding:20px 10px;color:var(--text3);font-size:12px">
+      <div style="font-size:28px;margin-bottom:8px">🔥</div>
+      Olá! Sou especialista em normas de segurança contra incêndio do CBMRN. Como posso ajudar?
+    </div>
+  </div>
+  <!-- Input float -->
+  <div style="padding:10px 12px;border-top:0.5px solid var(--border)">
+    <div style="display:flex;gap:6px">
+      <input id="ia-input-float" placeholder="Pergunte sobre normas, cálculos..."
+        style="flex:1;padding:8px 12px;border:0.5px solid var(--border2);border-radius:var(--r);font-size:12px;font-family:inherit;background:var(--surface);color:var(--text)"
+        onkeydown="if(event.key==='Enter')iaEnviar('float')">
+      <button onclick="iaEnviar('float')" id="ia-btn-float"
+        style="width:36px;height:36px;border-radius:var(--r);background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;cursor:pointer;color:#fff;font-size:14px;flex-shrink:0">
+        ➤
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAIS ══ -->
 
 <!-- CLIENTE -->
 <div class="overlay" id="modal-cliente">
@@ -1911,6 +2013,7 @@ async function _iniciarApp(u){
   document.getElementById('data-hoje').textContent=`${dias[n.getDay()]}, ${n.getDate()} de ${meses[n.getMonth()]} de ${n.getFullYear()}`;
 
   renderDashboard();
+  iaInit();
   carregarConfigEmpresa();
   setTimeout(carregarNotificacoes,1500);
   setTimeout(()=>{ calCarregarTarefas().then(calIniciarLembretes); },2000);
@@ -1946,7 +2049,9 @@ function showPage(id,el){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   if(el)el.classList.add('active');
-  const fn={dashboard:renderDashboard,clientes:renderClientes,vendas:renderVendas,financeiro:renderFinanceiro,funcionarios:renderFuncionarios,bombeiros:renderBombeiros,usuarios:renderUsuarios,orcamentos:renderOrcamentos,gantt:renderGanttPage,calendario:renderCalendario,config:renderConfig};
+  const fn={dashboard:renderDashboard,clientes:renderClientes,vendas:renderVendas,financeiro:renderFinanceiro,funcionarios:renderFuncionarios,bombeiros:renderBombeiros,usuarios:renderUsuarios,orcamentos:renderOrcamentos,gantt:renderGanttPage,calendario:renderCalendario,config:renderConfig,
+    assistente:()=>{iaCarregarHistorico();iaRenderHistorico();if(!_iaConvAtiva&&_iaConvs.length){iaAbrirConversa(_iaConvs[0].id);}else if(!_iaConvAtiva){iaNovaCONVERSA();}}
+  };
   if(fn[id])fn[id]();
 }
 
@@ -7222,6 +7327,286 @@ async function carregarConfigEmpresa(){
 }
 
 // ── FIM NOTIFICAÇÕES ──────────────────────────────────────────
+
+// ── ASSISTENTE IA ─────────────────────────────────────────────
+const GEMINI_KEY = 'AIzaSyB-v3jL_R81OT9WzRUvncQWF-SbgewWN1Y';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
+
+// Contexto especialista — normas CBMRN
+const IA_SYSTEM = `Você é um engenheiro especialista em segurança contra incêndio e pânico, com profundo conhecimento nas normas do Corpo de Bombeiros Militar do Rio Grande do Norte (CBMRN) e normas ABNT.
+
+SUAS ESPECIALIDADES:
+- Instruções Técnicas (ITs) do CBMRN 2022/2025 (IT-01 a IT-45)
+- Resoluções Técnicas do CBMRN (RT 03/2023, RT 04/2025, RT 05/2025)
+- Normas ABNT: NBR 13714 (hidrantes), NBR 10897 (chuveiros), NBR 17240 (alarme), NBR 9077 (saídas de emergência), NBR 13768, NBR 15219 e demais normas de segurança contra incêndio
+- Cálculos hidráulicos: pressão residual, vazão, diâmetro de tubulações, reservatório de incêndio (RI)
+- Classificação de edificações e áreas de risco (IT-01 CBMRN)
+- Dimensionamento de sistemas: hidrantes, mangotinhos, sprinklers, extintores, saídas de emergência, brigada de incêndio, sinalização, iluminação de emergência
+
+INSTRUÇÕES TÉCNICAS DISPONÍVEIS NO CBMRN:
+IT-01/2025: Procedimentos administrativos (classificação de edificações, licenciamento)
+IT-02/2022: Conceitos básicos de segurança contra incêndio
+IT-03/2022: Terminologia
+IT-04/2022: Símbolos gráficos para projetos
+IT-05/2022: Segurança urbanística
+IT-06/2022: Acesso de viaturas
+IT-07/2022: Isolamento de risco
+IT-08/2022: Segurança estrutural
+IT-09/2022: Compartimentação horizontal e vertical
+IT-10/2025: Materiais de acabamento e revestimento
+IT-11/2025: Saídas de emergência
+IT-13/2022: Pressurização de escada
+IT-14/2025: Carga de incêndio
+IT-15/2022 (I-VIII): Controle de fumaça
+IT-17/2025: Brigada de incêndio
+IT-18/2025: Iluminação de emergência
+IT-19/2025: Sistema de detecção e alarme
+IT-20/2022: Sinalização de emergência
+IT-21/2025: Extintores
+IT-22/2025: Hidrantes e mangotinhos
+IT-23/2022: Chuveiros automáticos
+IT-24/2022: Chuveiros para depósitos
+IT-25/2022: Líquidos combustíveis e inflamáveis
+IT-28/2022: GLP
+IT-29/2022: Gás natural
+IT-42/2022: Processo técnico simplificado
+IT-43/2025: Edificações existentes
+
+COMO RESPONDER:
+- Seja direto e técnico, como um engenheiro experiente falando com outro engenheiro
+- Cite sempre a IT ou NBR específica que fundamenta a resposta
+- Para cálculos, mostre o raciocínio passo a passo com fórmulas
+- Quando houver diferença entre CBMRN e ABNT, destaque qual prevalece no RN
+- Use formatação com bullets e negrito para facilitar leitura
+- Se não souber com certeza, diga explicitamente e recomende consultar a IT original
+- Responda em português brasileiro`;
+
+// Estado do chat
+let _iaConvs = []; // [{id, titulo, msgs:[{role,text,ts}]}]
+let _iaConvAtiva = null;
+let _iaFloatAberto = false;
+let _iaFloatMsgs = []; // msgs do chat flutuante (sessão)
+
+// ── HISTÓRICO (localStorage) ──────────────────────────────────
+function iaCarregarHistorico(){
+  try{ _iaConvs=JSON.parse(localStorage.getItem('ia_convs')||'[]'); }catch(e){ _iaConvs=[]; }
+}
+function iaSalvarHistorico(){
+  try{ localStorage.setItem('ia_convs',JSON.stringify(_iaConvs.slice(0,50))); }catch(e){}
+}
+
+// ── RENDERIZAR HISTÓRICO ──────────────────────────────────────
+function iaRenderHistorico(){
+  const el=document.getElementById('ia-historico-lista');
+  if(!el) return;
+  if(!_iaConvs.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 4px">Nenhuma conversa ainda.</div>';
+    return;
+  }
+  el.innerHTML=_iaConvs.map(c=>`
+    <div onclick="iaAbrirConversa('${c.id}')"
+      style="padding:8px 10px;border-radius:var(--r);cursor:pointer;background:${_iaConvAtiva===c.id?'var(--blue-bg)':'none'};border:0.5px solid ${_iaConvAtiva===c.id?'var(--blue)':'transparent'};transition:background .15s"
+      onmouseover="if('${c.id}'!=='${_iaConvAtiva}')this.style.background='var(--surface2)'"
+      onmouseout="if('${c.id}'!=='${_iaConvAtiva}')this.style.background='none'">
+      <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${_iaConvAtiva===c.id?'var(--blue)':'var(--text)'}">${c.titulo}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">${c.msgs.length} mensagem${c.msgs.length!==1?'s':''}</div>
+    </div>`).join('');
+}
+
+// ── NOVA CONVERSA ─────────────────────────────────────────────
+function iaNovaCONVERSA(){
+  const id='conv_'+Date.now();
+  _iaConvAtiva=id;
+  _iaConvs.unshift({id, titulo:'Nova conversa', msgs:[]});
+  iaSalvarHistorico();
+  iaRenderHistorico();
+  iaRenderMsgs('full');
+  document.getElementById('ia-conv-titulo').textContent='Nova conversa';
+  document.getElementById('ia-boas-vindas').style.display='block';
+}
+
+// ── ABRIR CONVERSA ────────────────────────────────────────────
+function iaAbrirConversa(id){
+  _iaConvAtiva=id;
+  const conv=_iaConvs.find(c=>c.id===id);
+  if(!conv) return;
+  document.getElementById('ia-conv-titulo').textContent=conv.titulo;
+  document.getElementById('ia-boas-vindas').style.display=conv.msgs.length?'none':'block';
+  iaRenderMsgs('full');
+  iaRenderHistorico();
+}
+
+// ── RENDERIZAR MENSAGENS ──────────────────────────────────────
+function iaRenderMsgs(mode){
+  const el=document.getElementById(`ia-msgs-${mode}`);
+  if(!el) return;
+  const msgs = mode==='float' ? _iaFloatMsgs
+    : (_iaConvs.find(c=>c.id===_iaConvAtiva)?.msgs||[]);
+  if(!msgs.length) return;
+
+  // Remove boas vindas se houver msgs
+  const bv=document.getElementById('ia-boas-vindas');
+  if(bv) bv.style.display='none';
+
+  const novos=msgs.slice(-(mode==='float'?50:msgs.length));
+  const html=novos.map(m=>`
+    <div style="display:flex;gap:10px;align-items:flex-start;${m.role==='user'?'flex-direction:row-reverse':''}">
+      <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;
+        ${m.role==='user'?'background:var(--blue-bg);color:var(--blue)':'background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff'}">
+        ${m.role==='user'?'👤':'✦'}
+      </div>
+      <div style="max-width:80%;padding:10px 14px;border-radius:${m.role==='user'?'12px 4px 12px 12px':'4px 12px 12px 12px'};
+        font-size:${mode==='float'?'12px':'13px'};line-height:1.6;
+        background:${m.role==='user'?'var(--blue-bg)':'var(--surface2)'};
+        color:var(--text);white-space:pre-wrap">
+        ${iaFormatarTexto(m.text)}
+      </div>
+    </div>`).join('');
+
+  if(mode==='full'){
+    const msgsEl=document.getElementById('ia-msgs-full');
+    // Mantém as boas-vindas e adiciona mensagens
+    const bvEl=document.getElementById('ia-boas-vindas');
+    if(bvEl) bvEl.remove();
+    msgsEl.innerHTML=html;
+  } else {
+    // Float: substitui apenas as mensagens (mantém a boas-vindas se vazio)
+    const bvEl=el.querySelector('div[style*="text-align:center"]');
+    if(bvEl) bvEl.remove();
+    el.innerHTML=html;
+  }
+  el.scrollTop=el.scrollHeight;
+}
+
+function iaFormatarTexto(txt){
+  return txt
+    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g,'<em>$1</em>')
+    .replace(/`(.*?)`/g,'<code style="background:var(--surface);padding:1px 5px;border-radius:4px;font-family:monospace;font-size:11px">$1</code>')
+    .replace(/^- (.+)$/gm,'• $1')
+    .replace(/^#{1,3} (.+)$/gm,'<strong style="font-size:1.05em">$1</strong>');
+}
+
+// ── ENVIAR MENSAGEM ───────────────────────────────────────────
+async function iaEnviar(mode){
+  const inputEl=document.getElementById(`ia-input-${mode}`);
+  const btnEl=document.getElementById(`ia-btn-${mode}`);
+  const txt=(inputEl?.value||'').trim();
+  if(!txt) return;
+
+  inputEl.value='';
+  if(inputEl.style) inputEl.style.height='44px';
+  btnEl.disabled=true;
+
+  // Garante conversa ativa no modo full
+  if(mode==='full'&&!_iaConvAtiva){
+    iaNovaCONVERSA();
+  }
+
+  const userMsg={role:'user',text:txt,ts:Date.now()};
+
+  if(mode==='float'){
+    _iaFloatMsgs.push(userMsg);
+  } else {
+    const conv=_iaConvs.find(c=>c.id===_iaConvAtiva);
+    if(conv){
+      conv.msgs.push(userMsg);
+      // Define título da conversa pela primeira pergunta
+      if(conv.msgs.length===1) conv.titulo=txt.slice(0,50)+(txt.length>50?'...':'');
+    }
+  }
+  iaRenderMsgs(mode);
+
+  // Indicador de digitação
+  const msgsEl=document.getElementById(`ia-msgs-${mode}`);
+  const typingId=`ia-typing-${mode}`;
+  msgsEl.insertAdjacentHTML('beforeend',`
+    <div id="${typingId}" style="display:flex;gap:10px;align-items:flex-start">
+      <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;flex-shrink:0">✦</div>
+      <div style="padding:10px 14px;background:var(--surface2);border-radius:4px 12px 12px 12px;font-size:13px;color:var(--text3)">
+        <span style="animation:pulse 1s infinite">Analisando...</span>
+      </div>
+    </div>`);
+  msgsEl.scrollTop=msgsEl.scrollHeight;
+
+  try{
+    // Monta histórico para contexto
+    const allMsgs = mode==='float' ? _iaFloatMsgs : (_iaConvs.find(c=>c.id===_iaConvAtiva)?.msgs||[]);
+    const contents = allMsgs.map(m=>({
+      role: m.role==='user'?'user':'model',
+      parts:[{text:m.text}]
+    }));
+
+    const resp = await fetch(GEMINI_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        system_instruction:{parts:[{text:IA_SYSTEM}]},
+        contents,
+        generationConfig:{
+          temperature:0.3,
+          maxOutputTokens:2048,
+        }
+      })
+    });
+
+    const data=await resp.json();
+    if(data.error) throw new Error(data.error.message);
+
+    const respText=data.candidates?.[0]?.content?.parts?.[0]?.text||'Não obtive resposta. Tente novamente.';
+    const asstMsg={role:'assistant',text:respText,ts:Date.now()};
+
+    document.getElementById(typingId)?.remove();
+
+    if(mode==='float'){
+      _iaFloatMsgs.push(asstMsg);
+    } else {
+      const conv=_iaConvs.find(c=>c.id===_iaConvAtiva);
+      if(conv) conv.msgs.push(asstMsg);
+      iaSalvarHistorico();
+      iaRenderHistorico();
+    }
+    iaRenderMsgs(mode);
+
+  }catch(e){
+    document.getElementById(typingId)?.remove();
+    const errMsg={role:'assistant',text:`⚠️ Erro: ${e.message}. Verifique sua conexão e tente novamente.`,ts:Date.now()};
+    if(mode==='float') _iaFloatMsgs.push(errMsg);
+    else { const conv=_iaConvs.find(c=>c.id===_iaConvAtiva); if(conv) conv.msgs.push(errMsg); }
+    iaRenderMsgs(mode);
+  }finally{
+    btnEl.disabled=false;
+  }
+}
+
+function iaEnviarSugestao(txt){
+  const input=document.getElementById('ia-input-full');
+  if(input){ input.value=txt; iaEnviar('full'); }
+}
+
+// ── TOGGLE FLUTUANTE ──────────────────────────────────────────
+function iaToggleFloat(){
+  _iaFloatAberto=!_iaFloatAberto;
+  const panel=document.getElementById('ia-float-panel');
+  panel.style.display=_iaFloatAberto?'flex':'none';
+  if(_iaFloatAberto) document.getElementById('ia-input-float')?.focus();
+}
+
+// ── INIT IA ───────────────────────────────────────────────────
+function iaInit(){
+  iaCarregarHistorico();
+  // Se não há conversa ativa, prepara uma nova ao abrir a página
+  if(!_iaConvAtiva && _iaConvs.length){
+    _iaConvAtiva=_iaConvs[0].id;
+  }
+}
+
+// CSS para animação do typing
+const iaStyle=document.createElement('style');
+iaStyle.textContent=`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`;
+document.head.appendChild(iaStyle);
+
+// ── FIM ASSISTENTE IA ─────────────────────────────────────────
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
