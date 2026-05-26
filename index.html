@@ -7330,7 +7330,8 @@ async function carregarConfigEmpresa(){
 
 // ── ASSISTENTE IA ─────────────────────────────────────────────
 const GEMINI_KEY = 'AIzaSyDxHOfIMB4y_0SUYGbnMWVSZIVE6Ud7ZmI';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+const GEMINI_URL  = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+const GEMINI_URL2 = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent?key=${GEMINI_KEY}`;
 
 // Contexto especialista — normas CBMRN
 const IA_SYSTEM = `Você é um engenheiro especialista em segurança contra incêndio e pânico, com profundo conhecimento nas normas do Corpo de Bombeiros Militar do Rio Grande do Norte (CBMRN) e normas ABNT.
@@ -7537,20 +7538,19 @@ async function iaEnviar(mode){
       parts:[{text:m.text}]
     }));
 
-    const resp = await fetch(GEMINI_URL,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
+    const body=JSON.stringify({
         system_instruction:{parts:[{text:IA_SYSTEM}]},
         contents,
-        generationConfig:{
-          temperature:0.3,
-          maxOutputTokens:2048,
-        }
-      })
-    });
+        generationConfig:{temperature:0.3,maxOutputTokens:2048}
+      });
 
-    const data=await resp.json();
+    // Tenta modelo principal, faz fallback automaticamente se sobrecarregado
+    let resp = await fetch(GEMINI_URL,{method:'POST',headers:{'Content-Type':'application/json'},body});
+    let data = await resp.json();
+    if(data.error?.message?.includes('high demand')||data.error?.status==='UNAVAILABLE'){
+      resp = await fetch(GEMINI_URL2,{method:'POST',headers:{'Content-Type':'application/json'},body});
+      data = await resp.json();
+    }
     if(data.error) throw new Error(data.error.message);
 
     const respText=data.candidates?.[0]?.content?.parts?.[0]?.text||'Não obtive resposta. Tente novamente.';
