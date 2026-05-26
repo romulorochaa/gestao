@@ -7541,7 +7541,7 @@ async function iaEnviar(mode){
     const body=JSON.stringify({
         system_instruction:{parts:[{text:IA_SYSTEM}]},
         contents,
-        generationConfig:{temperature:0.3,maxOutputTokens:2048}
+        generationConfig:{temperature:0.3,maxOutputTokens:8192}
       });
 
     // Tenta modelo principal, faz fallback automaticamente se sobrecarregado
