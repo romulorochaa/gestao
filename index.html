@@ -214,7 +214,6 @@ tr:hover td{background:var(--surface2)}
 .cli-badge-clear{background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;line-height:1;padding:0;margin-left:auto}
 .cli-badge-clear:hover{color:var(--red)}
 
-/* ── HAMBÚRGUER & MOBILE SIDEBAR ── */
 .hamburger-btn{display:none;background:none;border:none;cursor:pointer;padding:6px 8px;border-radius:var(--r);color:var(--text);font-size:20px;line-height:1;transition:background .15s}
 .hamburger-btn:hover{background:var(--surface2)}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:98}
@@ -227,17 +226,11 @@ tr:hover td{background:var(--surface2)}
   .metrics{grid-template-columns:1fr 1fr}
   .frow,.frow-3{grid-template-columns:1fr}
 }
-
-/* ── TOAST ── */
 #toast-container{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;min-width:280px;max-width:420px}
-.toast{padding:12px 18px;border-radius:var(--r);font-size:13px;font-family:'DM Sans',sans-serif;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.15);animation:toastIn .25s ease;pointer-events:auto;display:flex;align-items:center;gap:10px}
-.toast-success{background:#2d6a2d;color:#fff}
-.toast-error{background:#c0392b;color:#fff}
-.toast-warn{background:#7a4f00;color:#fff}
-.toast-info{background:#1a5fb4;color:#fff}
+.toast{padding:12px 18px;border-radius:var(--r);font-size:13px;font-family:inherit;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.15);animation:toastIn .25s ease;pointer-events:auto;display:flex;align-items:center;gap:10px}
+.toast-success{background:#2d6a2d;color:#fff}.toast-error{background:#c0392b;color:#fff}
+.toast-warn{background:#7a4f00;color:#fff}.toast-info{background:#1a5fb4;color:#fff}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-
-/* ── SESSÃO EXPIRADA ── */
 #sessao-expirada{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center}
 #sessao-expirada.open{display:flex}
 #sessao-expirada-card{background:#fff;border-radius:var(--r2);padding:32px;text-align:center;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.2)}
@@ -251,11 +244,11 @@ tr:hover td{background:var(--surface2)}
   <div class="login-card">
     <div class="login-logo">
       <div class="login-logo-icon">G</div>
-      <div><h1>GestãoPRO</h1><p>JPM Engenharia de Incêndio</p></div>
+      <div><h1>GestãoPRO</h1><p id="login-empresa-nome" style="min-height:15px;transition:opacity .3s"></p></div>
     </div>
     <div class="login-title">Entrar</div>
     <div class="login-error" id="login-error"></div>
-    <div class="fg"><label>Usuário</label><input id="login-usuario" type="text" placeholder="seu.usuario" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-senha').focus()"></div>
+    <div class="fg"><label>Usuário</label><input id="login-usuario" type="text" placeholder="seu.usuario" autocomplete="username" onblur="carregarNomeEmpresaLogin(this.value)" onkeydown="if(event.key==='Enter')document.getElementById('login-senha').focus()"></div>
     <div class="fg"><label>Senha</label><input id="login-senha" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrar()"></div>
     <button class="btn-login" id="btn-entrar" onclick="entrar()">Entrar</button>
   </div>
@@ -850,7 +843,7 @@ tr:hover td{background:var(--surface2)}
           <!-- Dados da empresa -->
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:12px">Dados da empresa</div>
           <div class="frow">
-            <div class="fg"><label>Nome da empresa *</label><input id="cfg-nome" placeholder="Ex: JPM Engenharia de Incêndio"></div>
+            <div class="fg"><label>Nome da empresa *</label><input id="cfg-nome" placeholder="Ex: Sua Empresa Ltda."></div>
             <div class="fg" style="max-width:220px"><label>CNPJ</label><input id="cfg-cnpj" placeholder="00.000.000/0001-00"></div>
           </div>
 
@@ -1925,94 +1918,46 @@ const fmtData = d  => { if(!d) return '—'; const p=(d.split('T')[0]).split('-'
 const diasAte = d  => { if(!d) return null; return Math.ceil((new Date(d.split('T')[0]+'T00:00:00')-new Date(hoje()+'T00:00:00'))/86400000); };
 const fmtTam  = b  => b>1048576?`${(b/1048576).toFixed(1)} MB`:`${(b/1024).toFixed(0)} KB`;
 
-// ── ESCAPE HTML (proteção XSS) ───────────────────────────────
 function escapeHTML(s){
   if(s==null)return'';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-
-// ── TOAST (notificações) ─────────────────────────────────────
-function showToast(msg,type='info',duration=4000){
-  const c=document.getElementById('toast-container');
-  if(!c)return;
-  const t=document.createElement('div');
-  t.className='toast toast-'+type;
-  const icons={success:'✅',error:'❌',warn:'⚠️',info:'ℹ️'};
-  const icon=document.createElement('span');icon.textContent=icons[type]||'ℹ️';
-  const txt=document.createElement('span');txt.textContent=msg;
-  t.appendChild(icon);t.appendChild(txt);
-  c.appendChild(t);
-  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(12px)';t.style.transition='all .25s';setTimeout(()=>t.remove(),250);},duration);
+function showToast(msg,type,dur){
+  type=type||'info';dur=dur||4000;
+  var c=document.getElementById('toast-container');if(!c)return;
+  var t=document.createElement('div');t.className='toast toast-'+type;
+  var icons={success:'✅',error:'❌',warn:'⚠️',info:'ℹ️'};
+  var ic=document.createElement('span');ic.textContent=icons[type]||'ℹ️';
+  var tx=document.createElement('span');tx.textContent=msg;
+  t.appendChild(ic);t.appendChild(tx);c.appendChild(t);
+  setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .25s';setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},260);},dur);
 }
-
-// ── SESSÃO EXPIRADA ───────────────────────────────────────────
-function mostrarSessaoExpirada(){
-  const el=document.getElementById('sessao-expirada');
-  if(el)el.classList.add('open');
+function mostrarSessaoExpirada(){var el=document.getElementById('sessao-expirada');if(el)el.classList.add('open');}
+function handleSupabaseError(err,ctx){
+  if(!err)return false;var m=err.message||'';
+  if(err.status===401||m.indexOf('JWT')>=0||m.indexOf('token')>=0){mostrarSessaoExpirada();return true;}
+  console.error('Erro Supabase'+(ctx?' ['+ctx+']':''),err);
+  showToast((ctx?ctx+': ':'')+m,'error');return true;
 }
-function handleSupabaseError(error,contexto=''){
-  if(!error)return false;
-  const msg=error.message||'';
-  if(error.status===401||msg.includes('JWT')||msg.includes('token')||msg.includes('session')){
-    mostrarSessaoExpirada();return true;
-  }
-  console.error('Erro Supabase'+(contexto?' ['+contexto+']':''),error);
-  showToast((contexto?contexto+': ':'')+msg,'error');
-  return true;
-}
-
-
-// ── HANDLER GLOBAL DE ERROS ASSÍNCRONOS ─────────────────────
-window.addEventListener('unhandledrejection', function(e){
-  const err = e.reason;
-  if(!err) return;
-  const msg = err.message || String(err);
-  // Ignora erros de cancelamento de fetch (ex: navegação)
-  if(msg.includes('AbortError') || msg.includes('The user aborted')) return;
-  if(msg.includes('JWT') || msg.includes('token') || msg.includes('401')){
-    mostrarSessaoExpirada(); return;
-  }
-  console.error('Erro assíncrono não tratado:', err);
-  // Só mostra toast para erros do Supabase (não polui com erros de terceiros)
-  if(msg.includes('supabase') || err.code || err.status){
-    showToast('Erro de conexão com o servidor. Tente novamente.', 'error');
-  }
+window.addEventListener('unhandledrejection',function(e){
+  var err=e.reason;if(!err)return;var m=err.message||String(err);
+  if(m.indexOf('AbortError')>=0)return;
+  if(m.indexOf('JWT')>=0||m.indexOf('401')>=0){mostrarSessaoExpirada();return;}
+  if(err.code||err.status)showToast('Erro de conexão. Tente novamente.','error');
 });
-
-window.addEventListener('error', function(e){
-  // Só loga, não mostra toast para erros de sintaxe/lógica em dev
-  console.error('Erro global:', e.message, e.filename, e.lineno);
-});
-
-// ── MOBILE SIDEBAR ────────────────────────────────────────────
 function toggleMobileSidebar(){
-  const sb=document.getElementById('sidebar');
-  const ov=document.getElementById('sidebar-overlay');
-  if(!sb)return;
-  const open=sb.classList.toggle('mobile-open');
-  if(ov)ov.classList.toggle('open',open);
+  var sb=document.getElementById('sidebar'),ov=document.getElementById('sidebar-overlay');
+  if(!sb)return;var op=sb.classList.toggle('mobile-open');if(ov)ov.classList.toggle('open',op);
 }
 function closeMobileSidebar(){
-  const sb=document.getElementById('sidebar');
-  const ov=document.getElementById('sidebar-overlay');
-  if(sb)sb.classList.remove('mobile-open');
-  if(ov)ov.classList.remove('open');
+  var sb=document.getElementById('sidebar'),ov=document.getElementById('sidebar-overlay');
+  if(sb)sb.classList.remove('mobile-open');if(ov)ov.classList.remove('open');
 }
-
-// ── ANO DINÂMICO ─────────────────────────────────────────────
 function popularAnos(){
-  const sel=document.getElementById('f-sel-ano');
-  if(!sel)return;
-  const anoAtual=new Date().getFullYear();
-  sel.innerHTML='';
-  for(let a=2023;a<=anoAtual+3;a++){
-    const opt=document.createElement('option');
-    opt.value=a;opt.textContent=a;
-    if(a===anoAtual)opt.selected=true;
-    sel.appendChild(opt);
-  }
+  var sel=document.getElementById('f-sel-ano');if(!sel)return;
+  var a=new Date().getFullYear();sel.innerHTML='';
+  for(var y=2023;y<=a+3;y++){var o=document.createElement('option');o.value=y;o.textContent=y;if(y===a)o.selected=true;sel.appendChild(o);}
 }
-
 
 
 const ETAPAS_CB = ['Levantamento e projeto','Pagamento de taxas','Protocolo no CB','Análise técnica','Aguardando vistoria','Vistoria realizada','Aprovação final','AVCB emitido'];
@@ -2055,16 +2000,16 @@ async function entrar(){
   const errEl=document.getElementById('login-error');
   const btn=document.getElementById('btn-entrar');
   errEl.textContent='';
-  if(!usuario||!senha){ errEl.textContent='Preencha usuário e senha.'; errEl.style.display='block'; return; }
+  if(!usuario||!senha){ errEl.textContent='Preencha usuário e senha.';errEl.style.display='block';return; }
   btn.disabled=true; btn.textContent='Entrando...';
   try{
     // Busca usuário globalmente pelo username (cross-company)
     const{data:u,error}=await SB.from('perfis').select('*').eq('usuario',usuario).eq('ativo',true).single();
-    if(error||!u){ errEl.textContent='Usuário não encontrado ou inativo.'; errEl.style.display='block'; return; }
-    if(!u.empresa_id){ errEl.textContent='Usuário sem empresa vinculada. Contate o suporte.'; errEl.style.display='block'; return; }
+    if(error||!u){ errEl.textContent='Usuário não encontrado ou inativo.';errEl.style.display='block';return; }
+    if(!u.empresa_id){ errEl.textContent='Usuário sem empresa vinculada.';errEl.style.display='block';return; }
     // Verifica senha com hash
     const senhaHash=await _hashSenha(senha);
-    if(senhaHash!==u.senha_hash){ errEl.textContent='Senha incorreta.'; errEl.style.display='block'; return; }
+    if(senhaHash!==u.senha_hash){ errEl.textContent='Senha incorreta.';errEl.style.display='block';return; }
     // Login bem-sucedido — salva id e empresa_id na sessão
     sessionStorage.setItem('gestao_sessao',JSON.stringify({id:u.id, empresa_id:u.empresa_id}));
     await _iniciarApp(u);
@@ -2075,6 +2020,34 @@ async function entrar(){
 
 // Expõe a função `entrar` no escopo global (garante disponibilidade para atributos onclick)
 window.entrar = entrar;
+
+// ── NOME DA EMPRESA NO LOGIN (multi-tenant) ───────────────────
+// Carrega o nome da empresa do usuário ao sair do campo de usuário
+let _loginEmpresaCache = {};
+async function carregarNomeEmpresaLogin(usuario){
+  usuario = (usuario||'').trim().toLowerCase();
+  const el = document.getElementById('login-empresa-nome');
+  if(!el) return;
+  if(!usuario){ el.textContent=''; return; }
+  // Usa cache para evitar múltiplas buscas
+  if(_loginEmpresaCache[usuario] !== undefined){
+    el.textContent = _loginEmpresaCache[usuario];
+    return;
+  }
+  try{
+    const{data:u} = await SB.from('perfis').select('empresa_id').eq('usuario',usuario).eq('ativo',true).maybeSingle();
+    if(!u?.empresa_id){ _loginEmpresaCache[usuario]=''; el.textContent=''; return; }
+    const{data:cfg} = await SB.from('config_empresa').select('nome').eq('empresa_id',u.empresa_id).maybeSingle();
+    const nome = cfg?.nome || '';
+    _loginEmpresaCache[usuario] = nome;
+    el.style.opacity='0';
+    el.textContent = nome;
+    setTimeout(()=>{ el.style.opacity='1'; }, 20);
+  }catch(e){
+    // Silencioso — não bloqueia o login se falhar
+    el.textContent='';
+  }
+}
 // Garante que o botão e o campo senha chamem a função corretamente
 try{
   const _btn = document.getElementById('btn-entrar');
@@ -2339,12 +2312,11 @@ async function popularSelects(){
 
 async function log(tipo,desc,status){
   // Não bloqueia — falha silenciosa se não houver autenticação
-  SB.from('atividades').insert({empresa_id:EMP_ID,tipo,descricao:desc,status,usuario_nome:'JPM'}).then(()=>{}).catch(()=>{});
+  SB.from('atividades').insert({empresa_id:EMP_ID,tipo,descricao:desc,status,usuario_nome:PERFIL.nome||'Sistema'}).then(()=>{}).catch(()=>{});
 }
 
 // ── DASHBOARD ────────────────────────────────────────────────
 async function renderDashboard(){
-  try{
   const now = new Date();
   const mesAtual = now.getMonth()+1;
   const anoAtual = now.getFullYear();
@@ -2462,7 +2434,7 @@ async function renderDashboard(){
       return`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid var(--border)">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.cliente_nome||'—'}</div>
-          <div style="font-size:11px;color:var(--text3)">${p.venda_servico||''} · Parcela ${escapeHTML(p.numero)}/${p.total_parcelas}</div>
+          <div style="font-size:11px;color:var(--text3)">${p.venda_servico||''} · Parcela ${p.numero}/${p.total_parcelas}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace">${fmt(p.valor)}</div>
@@ -2533,7 +2505,6 @@ async function renderDashboard(){
 // ── CLIENTES ────────────────────────────────────────────────
 let _clientes=[];
 async function renderClientes(){
-  try{
   const{data}=await SB.from('clientes').select('*').eq('empresa_id',EMP_ID).order('nome');
   _clientes=data||[];renderTabelaClientes(_clientes);
 }
@@ -2547,8 +2518,8 @@ function renderTabelaClientes(lista){
     <tr><th>Nome / Empresa</th><th>Documento</th><th>Telefone</th><th>Endereço</th><th>Município / UF</th><th>Status</th><th></th></tr>
     ${lista.map(c=>`<tr>
       <td><strong>${escapeHTML(c.nome)}</strong>${c.email?`<br><span style="font-size:11px;color:var(--text3)">${escapeHTML(c.email)}</span>`:''}</td>
-      <td style="font-size:12px">${escapeHTML(c.documento)||'—'}</td>
-      <td style="font-size:12px">${escapeHTML(c.telefone)||'—'}</td>
+      <td style="font-size:12px">${c.documento||'—'}</td>
+      <td style="font-size:12px">${c.telefone||'—'}</td>
       <td style="font-size:12px">${[c.rua,c.bairro].filter(Boolean).join(', ')||c.cidade||'—'}</td>
       <td style="font-size:12px">${[c.cidade,c.uf].filter(Boolean).join(' / ')||'—'}</td>
       <td>${badge(c.status)}</td>
@@ -2663,7 +2634,6 @@ async function salvarCliente(){
 
 // ── VENDAS ────────────────────────────────────────────────────
 async function renderVendas(){
-  try{
   const[{data:vendas},{data:parcelas}]=await Promise.all([
     SB.from('vendas').select('*').eq('empresa_id',EMP_ID).order('criado_em',{ascending:false}),
     SB.from('parcelas').select('*').eq('empresa_id',EMP_ID),
@@ -2857,7 +2827,7 @@ async function carregarParcelas(vendaId){
       ?`<span style="font-family:'DM Mono',monospace;font-size:13px">${fmt(p.valor_recebido)}</span><span style="font-size:10px;color:var(--amber);margin-left:4px">ISS: ${fmt(Number(p.valor)-Number(p.valor_recebido))}</span>`
       :`<span style="font-size:13px;font-family:'DM Mono',monospace">${fmt(p.valor)}</span>`;
     return`<div id="parc-row-${p.id}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border);flex-wrap:wrap">
-      <span style="font-size:12px;color:var(--text3);font-weight:600;min-width:30px;text-align:center">${escapeHTML(p.numero)}/${p.total_parcelas}</span>
+      <span style="font-size:12px;color:var(--text3);font-weight:600;min-width:30px;text-align:center">${p.numero}/${p.total_parcelas}</span>
       <span style="flex:1;min-width:120px">${valorExib}</span>
       <span style="font-size:12px;color:var(--text2)">${fmtData(p.data_vencimento)}${atrasado?` <span style="color:var(--red)">(atrasado)</span>`:''}</span>
       <span>${badge(atrasado?'Atrasado':p.status)}</span>
@@ -3081,7 +3051,6 @@ function _finAtualizarLabel(){
 }
 
 async function renderFinanceiro(){
-  try{
   const now=new Date();
   // Inicializa seletores com mês/ano corrente
   const selMes=document.getElementById('f-sel-mes');
@@ -3141,7 +3110,7 @@ async function renderFinanceiro(){
   const parcelasComoLanc=parcFiltradas.filter(p=>p.status==='Recebido').map(p=>({
     id:p.id,tipo:'Receita',
     data_lancamento:p.data_recebimento||p.data_vencimento,
-    descricao:`Parcela ${escapeHTML(p.numero)}/${p.total_parcelas} — ${p.venda_servico||''}`,
+    descricao:`Parcela ${p.numero}/${p.total_parcelas} — ${p.venda_servico||''}`,
     origem:p.cliente_nome,
     valor:p.valor_recebido!=null?p.valor_recebido:p.valor,
     status:'Recebido',_parcela:true
@@ -3201,7 +3170,7 @@ async function renderParcelasFinanceiro(parcelas){
     return`<tr>
       <td><strong>${p.cliente_nome||'—'}</strong></td>
       <td style="font-size:12px;color:var(--text2)">${p.venda_servico||'—'}</td>
-      <td><span class="badge b-gray">${escapeHTML(p.numero)}/${p.total_parcelas}</span></td>
+      <td><span class="badge b-gray">${p.numero}/${p.total_parcelas}</span></td>
       <td>${prazoStr}</td>
       <td style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500">${fmt(p.valor)}</td>
       <td>${valorRecebidoCell}</td>
@@ -3233,7 +3202,7 @@ async function abrirRecebimento(parcelaId){
   document.getElementById('rec-cliente').textContent  = p.cliente_nome||'—';
   document.getElementById('rec-servico').textContent  = p.venda_servico||'—';
   document.getElementById('rec-parcela').textContent  =
-    `${escapeHTML(p.numero)}/${p.total_parcelas} — venc. ${fmtData(p.data_vencimento)}`;
+    `${p.numero}/${p.total_parcelas} — venc. ${fmtData(p.data_vencimento)}`;
   document.getElementById('rec-valor-original').textContent = fmt(p.valor);
 
   // Valores editáveis — preenche com o que já foi salvo ou com o padrão
@@ -3312,7 +3281,7 @@ async function renderLancFiltro(tipo){
       id:p.id,
       tipo:'Receita',
       data_lancamento:p.data_recebimento||p.data_vencimento,
-      descricao:`Parcela ${escapeHTML(p.numero)}/${p.total_parcelas} — ${p.venda_servico||''}`,
+      descricao:`Parcela ${p.numero}/${p.total_parcelas} — ${p.venda_servico||''}`,
       origem:p.cliente_nome,
       categoria:'Venda de serviços',
       valor:p.valor_recebido!=null?p.valor_recebido:p.valor,
@@ -3586,7 +3555,7 @@ async function renderParcelasAPagar(){
         <td><strong style="font-size:13px">${p.descricao||'—'}</strong></td>
         <td style="font-size:12px;color:var(--text2)">${p.fornecedor||'—'}</td>
         <td>${p.categoria?`<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--text2);border:0.5px solid var(--border)">${escapeHTML(p.categoria)}</span>`:'—'}</td>
-        <td><span class="badge b-gray">${escapeHTML(p.numero)}/${p.total_parcelas}</span></td>
+        <td><span class="badge b-gray">${p.numero}/${p.total_parcelas}</span></td>
         <td>${prazoStr}</td>
         <td style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;color:var(--red)">${fmt(p.valor)}</td>
         <td>${badge(atrasado?'Atrasado':p.status)}</td>
@@ -3616,7 +3585,7 @@ async function pagarParcelaDespesa(id){
   // o pai fica sempre Pendente como referência, evitando dupla contagem
   await SB.from('lancamentos').insert({empresa_id:EMP_ID,
     tipo:'Despesa',
-    descricao:`${escapeHTML(p.descricao)} (${escapeHTML(p.numero)}/${p.total_parcelas})`,
+    descricao:`${escapeHTML(p.descricao)} (${p.numero}/${p.total_parcelas})`,
     valor:Number(p.valor),
     data_lancamento:hoje(),
     origem:p.fornecedor,
@@ -3625,7 +3594,7 @@ async function pagarParcelaDespesa(id){
     orcamento_id:p.orcamento_id,
   });
 
-  log('Financeiro',`Parcela paga: ${escapeHTML(p.descricao)} ${escapeHTML(p.numero)}/${p.total_parcelas}`,'Pago');
+  log('Financeiro',`Parcela paga: ${escapeHTML(p.descricao)} ${p.numero}/${p.total_parcelas}`,'Pago');
   await Promise.all([renderFinanceiro(),renderDashboard()]);
   renderParcelasAPagar();
 }
@@ -3639,7 +3608,6 @@ async function excluirParcelaDespesa(id){
 
 // ── FUNCIONÁRIOS ─────────────────────────────────────────────
 async function renderFuncionarios(){
-  try{
   const{data}=await SB.from('funcionarios').select('*').eq('empresa_id',EMP_ID).order('nome');
   const f=data||[];
   document.getElementById('rh-total').textContent=f.length;
@@ -3858,7 +3826,6 @@ async function salvarProcesso(){
 }
 
 async function renderBombeiros(){
-  try{
   const{data}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).order('criado_em',{ascending:false});
   const procs=data||[];
 
@@ -4185,7 +4152,6 @@ async function avancarEtapa(id){
 
 // ── USUÁRIOS ─────────────────────────────────────────────────
 async function renderUsuarios(){
-  try{
   if(!isAdmin()){document.getElementById('tabela-usuarios').innerHTML='<div class="empty">Acesso restrito a administradores.</div>';return;}
   const{data}=await SB.from('perfis').select('id,nome,usuario,nivel,ativo,criado_em').order('nome');
   const el=document.getElementById('tabela-usuarios');
@@ -4285,7 +4251,7 @@ let _orcamentos=[], _itensOrc=[], _clientesOrc=[];
 const CONFIG = {
 
   empresa: {
-    nome:      'JPM ENGENHARIA DE INCÊNDIO',
+    nome:      EMPRESA?.nome||'',
     cnpj:      '26.619.473/0001-65',
     telefone:  '(84) 99911-9505',
     email:     'contato@jpmincendio.com',
@@ -4316,7 +4282,6 @@ const CONFIG = {
 const EMPRESA = CONFIG.empresa;
 
 async function renderOrcamentos(){
-  try{
   const{data}=await SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).order('numero',{ascending:false});
   _orcamentos=data||[];
   const aprov=_orcamentos.filter(o=>o.status==='Aprovado');
@@ -4512,7 +4477,7 @@ async function salvarOrcamento(){
     document.getElementById('orc-modal-titulo').textContent=`Proposta Nº ${String(novo.numero).padStart(5,'0')}`;
     ['orc-alerta-itens','orc-alerta-cond','orc-alerta-preview'].forEach(id=>document.getElementById(id).style.display='none');
     ['orc-itens-conteudo','orc-cond-conteudo','orc-preview-conteudo'].forEach(id=>document.getElementById(id).style.display='block');
-    log('Orçamento',`Nova proposta Nº ${escapeHTML(novo.numero)} — ${escapeHTML(cli.nome)}: ${titulo}`,payload.status);
+    log('Orçamento',`Nova proposta Nº ${novo.numero} — ${escapeHTML(cli.nome)}: ${titulo}`,payload.status);
   }
   renderOrcamentos();
   renderItensOrc();
@@ -4659,7 +4624,7 @@ async function gerarPreviewDoc(){
         <div style="font-size:42px;font-weight:900;line-height:1.1;letter-spacing:-1px;margin-bottom:16px">PROPOSTA<br>COMERCIAL</div>
         <div style="width:200px;height:3px;background:#1a1a1a;margin-bottom:20px"></div>
         <div style="font-size:12px;font-weight:700;letter-spacing:1px;color:#333;text-transform:uppercase">${o.cliente_nome||''}</div>
-        ${o.cliente_doc?`<div style="font-size:12px;color:#555;margin-top:4px">CNPJ: ${escapeHTML(o.cliente_doc)}</div>`:''}
+        ${o.cliente_doc?`<div style="font-size:12px;color:#555;margin-top:4px">CNPJ: ${o.cliente_doc}</div>`:''}
       </div>
     </div>
 
@@ -4736,8 +4701,8 @@ async function gerarPreviewDoc(){
       <!-- Assinatura -->
       ${o.responsavel?`<div style="margin-top:40px;padding:0 20px 40px;text-align:center">
         <div style="display:inline-block;border-top:1px solid #333;padding-top:8px;min-width:220px">
-          <div style="font-weight:700;font-size:13px">${escapeHTML(o.responsavel.split('—')[0]?.trim()||o.responsavel)}</div>
-          ${o.responsavel.includes('—')?`<div style="font-size:11px;color:#555">${escapeHTML(o.responsavel.split('—')[1]?.trim())}</div>`:''}
+          <div style="font-weight:700;font-size:13px">${o.responsavel.split('—')[0]?.trim()||o.responsavel}</div>
+          ${o.responsavel.includes('—')?`<div style="font-size:11px;color:#555">${o.responsavel.split('—')[1]?.trim()}</div>`:''}
         </div>
       </div>`:''}
     </div>
@@ -4757,7 +4722,7 @@ function imprimirOrcamento(){
   const el=document.getElementById('doc-print');
   if(!el){alert('Abra a aba "Visualizar / Imprimir" primeiro.');return;}
   const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Proposta Comercial - JPM Engenharia</title>
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Proposta Comercial - ${EMPRESA?.nome||'GestãoPRO'}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;color:#1a1a1a}
@@ -4768,23 +4733,9 @@ function imprimirOrcamento(){
     }
     @media screen{body{padding:20px;background:#f0eeea}}
   </style>
-  </head><body>${el.outerHTML}
-<!-- Overlay para fechar sidebar no mobile -->
-<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeMobileSidebar()"></div>
-
-<!-- Toast container -->
+  </head><body>${el.outerHTML}<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeMobileSidebar()"></div>
 <div id="toast-container"></div>
-
-<!-- Modal sessão expirada -->
-<div id="sessao-expirada">
-  <div id="sessao-expirada-card">
-    <div style="font-size:36px;margin-bottom:12px">&#8987;</div>
-    <div style="font-size:17px;font-weight:600;margin-bottom:8px">Sessão expirada</div>
-    <div style="font-size:13px;color:#6b6860;margin-bottom:20px">Sua sessão expirou por inatividade. Faça login novamente para continuar.</div>
-    <button onclick="sair()" style="padding:10px 28px;background:#1a5fb4;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit">Fazer login novamente</button>
-  </div>
-</div>
-
+<div id="sessao-expirada"><div id="sessao-expirada-card"><div style="font-size:36px;margin-bottom:12px">&#8987;</div><div style="font-size:17px;font-weight:600;margin-bottom:8px">Sessão expirada</div><div style="font-size:13px;color:#6b6860;margin-bottom:20px">Sua sessão expirou. Faça login novamente.</div><button onclick="sair()" style="padding:10px 28px;background:#1a5fb4;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit">Fazer login novamente</button></div></div>
 </body></html>`);
   w.document.close();
   setTimeout(()=>w.print(),800);
@@ -4998,7 +4949,7 @@ async function impHandleFile(file){
       msgContent.push({type:'document',source:{type:'base64',media_type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',data:base64}});
     }
 
-    msgContent.push({type:'text',text:`Você está lendo uma proposta comercial da empresa JPM ENGENHARIA DE INCÊNDIO.
+    msgContent.push({type:'text',text:`Você está lendo uma proposta comercial da empresa ${EMPRESA?.nome||''}.
 Extraia os dados e retorne SOMENTE um JSON válido, sem texto antes ou depois, sem markdown, no seguinte formato:
 {
   "cliente": {
@@ -5202,7 +5153,7 @@ async function impCriarOrcamento(){
       cliente_uf:   cli.uf||'',
       cliente_cep:  cli.cep||'',
       titulo,
-      responsavel:  'JPM',
+      responsavel:  EMPRESA?.nome||'',
       data_emissao: hoje(),
       validade_dias:parseInt(document.getElementById('imp-validade').value||10),
       status:       'Rascunho',
@@ -5278,7 +5229,6 @@ let _calLembretesDisparados = new Set();
 
 // ── INIT ──────────────────────────────────────────────────────
 async function renderCalendario(){
-  try{
   await Promise.all([calCarregarListas(), calCarregarTarefas()]);
   // Restaura último modo usado
   const savedMode = localStorage.getItem('cal_mode')||'lista';
@@ -6065,7 +6015,7 @@ function gcalTarefaParaEvento(t){
   if(t.observacoes) descParts.push(t.observacoes);
 
   const evento = {
-    summary: `[JPM] ${escapeHTML(t.titulo)}`,
+    summary: `[${EMPRESA?.nome||'GestãoPRO'}] ${escapeHTML(t.titulo)}`,
     start,
     end,
     colorId: corId,
@@ -6282,7 +6232,6 @@ async function renderGanttPage(){
 }
 
 async function renderGanttDashboard(){
-  try{
   // Busca todas obras aprovadas + seus itens
   const{data:obras}=await SB.from('orcamentos')
     .select('id,numero,titulo,cliente_nome,valor_total,data_emissao,validade_dias,prazo_execucao')
@@ -6921,7 +6870,7 @@ function renderComentarios(lista){
   el.innerHTML=lista.map(c=>`
     <div style="padding:10px 14px;background:${c.tipo_usuario==='cliente'?'var(--blue-bg)':'var(--surface2)'};border-radius:var(--r);margin-bottom:8px;border-left:3px solid ${c.tipo_usuario==='cliente'?'var(--blue)':'var(--border2)'}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <strong style="font-size:12px">${c.tipo_usuario==='cliente'?'👤 '+c.autor:'🔥 JPM Engenharia'}</strong>
+        <strong style="font-size:12px">${c.tipo_usuario==='cliente'?'👤 '+c.autor:'🔥 '+(EMPRESA?.nome||'Empresa')}</strong>
         <span style="font-size:11px;color:var(--text3)">${fmtData(c.criado_em?.split('T')[0])} ${c.criado_em?.split('T')[1]?.slice(0,5)||''}</span>
       </div>
       <div style="font-size:13px;line-height:1.5;white-space:pre-wrap">${escapeHTML(c.texto)}</div>
@@ -6935,7 +6884,7 @@ async function enviarComentario(){
   const{error}=await SB.from('gantt_comentarios').insert({empresa_id:EMP_ID,
     orcamento_id: _ganttOrcId,
     texto,
-    autor:       'JPM',
+    autor:       EMPRESA?.nome||'Sistema',
     tipo_usuario:'interno',
   });
   if(error){alert('Erro: '+error.message);return;}
@@ -6961,7 +6910,6 @@ async function novoLancamentoObra(){
 }
 
 async function renderGanttFinanceiro(){
-  try{
   const el=document.getElementById('gantt-financeiro');
   if(!el||!_ganttOrcId||!_ganttOrc)return;
 
@@ -7742,35 +7690,4 @@ function iaToggleFloat(){
   if(_iaFloatAberto) document.getElementById('ia-input-float')?.focus();
 }
 
-// ── INIT IA ───────────────────────────────────────────────────
-function iaInit(){
-  iaCarregarHistorico();
-  // Se não há conversa ativa, prepara uma nova ao abrir a página
-  if(!_iaConvAtiva && _iaConvs.length){
-    _iaConvAtiva=_iaConvs[0].id;
-  }
-}
-
-// CSS para animação do typing
-const iaStyle=document.createElement('style');
-iaStyle.textContent=`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`;
-document.head.appendChild(iaStyle);
-
-// ── FIM ASSISTENTE IA ─────────────────────────────────────────
-
-// ── INIT ──────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('l-data').value = hoje();
-  document.getElementById('v-data').value = hoje();
-  document.getElementById('p-inicio').value = hoje();
-
-  document.getElementById('login-senha').addEventListener('keydown', e => {
-    if (e.key === 'Enter') entrar();
-  });
-  // Carrega notificações ao iniciar e a cada 2 minutos
-  setTimeout(carregarNotificacoes, 1500);
-  setInterval(carregarNotificacoes, 120000);
-});
-</script>
-</body>
-</html>
+// ── INIT IA ─────────────────────────────────
