@@ -1918,10 +1918,12 @@ const fmtData = d  => { if(!d) return '—'; const p=(d.split('T')[0]).split('-'
 const diasAte = d  => { if(!d) return null; return Math.ceil((new Date(d.split('T')[0]+'T00:00:00')-new Date(hoje()+'T00:00:00'))/86400000); };
 const fmtTam  = b  => b>1048576?`${(b/1048576).toFixed(1)} MB`:`${(b/1024).toFixed(0)} KB`;
 
+// ── ESCAPE HTML ──────────────────────────────────────────────
 function escapeHTML(s){
   if(s==null)return'';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+// ── TOAST ────────────────────────────────────────────────────
 function showToast(msg,type,dur){
   type=type||'info';dur=dur||4000;
   var c=document.getElementById('toast-container');if(!c)return;
@@ -1930,13 +1932,15 @@ function showToast(msg,type,dur){
   var ic=document.createElement('span');ic.textContent=icons[type]||'ℹ️';
   var tx=document.createElement('span');tx.textContent=msg;
   t.appendChild(ic);t.appendChild(tx);c.appendChild(t);
-  setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .25s';setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},260);},dur);
+  setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .25s';
+    setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},260);},dur);
 }
+// ── SESSÃO EXPIRADA ──────────────────────────────────────────
 function mostrarSessaoExpirada(){var el=document.getElementById('sessao-expirada');if(el)el.classList.add('open');}
 function handleSupabaseError(err,ctx){
   if(!err)return false;var m=err.message||'';
   if(err.status===401||m.indexOf('JWT')>=0||m.indexOf('token')>=0){mostrarSessaoExpirada();return true;}
-  console.error('Erro Supabase'+(ctx?' ['+ctx+']':''),err);
+  console.error('Erro'+(ctx?' ['+ctx+']':''),err);
   showToast((ctx?ctx+': ':'')+m,'error');return true;
 }
 window.addEventListener('unhandledrejection',function(e){
@@ -1945,6 +1949,7 @@ window.addEventListener('unhandledrejection',function(e){
   if(m.indexOf('JWT')>=0||m.indexOf('401')>=0){mostrarSessaoExpirada();return;}
   if(err.code||err.status)showToast('Erro de conexão. Tente novamente.','error');
 });
+// ── MOBILE SIDEBAR ───────────────────────────────────────────
 function toggleMobileSidebar(){
   var sb=document.getElementById('sidebar'),ov=document.getElementById('sidebar-overlay');
   if(!sb)return;var op=sb.classList.toggle('mobile-open');if(ov)ov.classList.toggle('open',op);
@@ -1953,11 +1958,35 @@ function closeMobileSidebar(){
   var sb=document.getElementById('sidebar'),ov=document.getElementById('sidebar-overlay');
   if(sb)sb.classList.remove('mobile-open');if(ov)ov.classList.remove('open');
 }
+// ── ANO DINÂMICO ─────────────────────────────────────────────
 function popularAnos(){
   var sel=document.getElementById('f-sel-ano');if(!sel)return;
   var a=new Date().getFullYear();sel.innerHTML='';
-  for(var y=2023;y<=a+3;y++){var o=document.createElement('option');o.value=y;o.textContent=y;if(y===a)o.selected=true;sel.appendChild(o);}
+  for(var y=2023;y<=a+3;y++){
+    var o=document.createElement('option');o.value=y;o.textContent=y;
+    if(y===a)o.selected=true;sel.appendChild(o);
+  }
 }
+// ── NOME DA EMPRESA NO LOGIN (multi-tenant) ──────────────────
+// Definida no escopo global para ser acessível via onblur no HTML
+var _loginEmpresaCache={};
+async function carregarNomeEmpresaLogin(usuario){
+  usuario=(usuario||'').trim().toLowerCase();
+  var el=document.getElementById('login-empresa-nome');
+  if(!el)return;
+  if(!usuario){el.textContent='';return;}
+  if(_loginEmpresaCache[usuario]!==undefined){el.textContent=_loginEmpresaCache[usuario];return;}
+  try{
+    var r1=await SB.from('perfis').select('empresa_id').eq('usuario',usuario).eq('ativo',true).maybeSingle();
+    if(!r1.data?.empresa_id){_loginEmpresaCache[usuario]='';el.textContent='';return;}
+    var r2=await SB.from('config_empresa').select('nome').eq('empresa_id',r1.data.empresa_id).maybeSingle();
+    var nome=r2.data?.nome||'';
+    _loginEmpresaCache[usuario]=nome;
+    el.style.opacity='0';el.textContent=nome;
+    setTimeout(function(){el.style.opacity='1';},20);
+  }catch(e){el.textContent='';}
+}
+
 
 
 const ETAPAS_CB = ['Levantamento e projeto','Pagamento de taxas','Protocolo no CB','Análise técnica','Aguardando vistoria','Vistoria realizada','Aprovação final','AVCB emitido'];
@@ -2020,34 +2049,6 @@ async function entrar(){
 
 // Expõe a função `entrar` no escopo global (garante disponibilidade para atributos onclick)
 window.entrar = entrar;
-
-// ── NOME DA EMPRESA NO LOGIN (multi-tenant) ───────────────────
-// Carrega o nome da empresa do usuário ao sair do campo de usuário
-let _loginEmpresaCache = {};
-async function carregarNomeEmpresaLogin(usuario){
-  usuario = (usuario||'').trim().toLowerCase();
-  const el = document.getElementById('login-empresa-nome');
-  if(!el) return;
-  if(!usuario){ el.textContent=''; return; }
-  // Usa cache para evitar múltiplas buscas
-  if(_loginEmpresaCache[usuario] !== undefined){
-    el.textContent = _loginEmpresaCache[usuario];
-    return;
-  }
-  try{
-    const{data:u} = await SB.from('perfis').select('empresa_id').eq('usuario',usuario).eq('ativo',true).maybeSingle();
-    if(!u?.empresa_id){ _loginEmpresaCache[usuario]=''; el.textContent=''; return; }
-    const{data:cfg} = await SB.from('config_empresa').select('nome').eq('empresa_id',u.empresa_id).maybeSingle();
-    const nome = cfg?.nome || '';
-    _loginEmpresaCache[usuario] = nome;
-    el.style.opacity='0';
-    el.textContent = nome;
-    setTimeout(()=>{ el.style.opacity='1'; }, 20);
-  }catch(e){
-    // Silencioso — não bloqueia o login se falhar
-    el.textContent='';
-  }
-}
 // Garante que o botão e o campo senha chamem a função corretamente
 try{
   const _btn = document.getElementById('btn-entrar');
@@ -4722,7 +4723,7 @@ function imprimirOrcamento(){
   const el=document.getElementById('doc-print');
   if(!el){alert('Abra a aba "Visualizar / Imprimir" primeiro.');return;}
   const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Proposta Comercial - ${EMPRESA?.nome||'GestãoPRO'}</title>
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Proposta Comercial</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;color:#1a1a1a}
@@ -6377,7 +6378,7 @@ function ganttRenderCards(obras_info){
               <div style="font-weight:600;font-size:14px;margin-top:2px;line-height:1.3">${escapeHTML(o.cliente_nome)}</div>
               <div style="font-size:12px;color:var(--text2);margin-top:2px;line-height:1.3">${escapeHTML(o.titulo)}</div>
             </div>
-            <span style="font-size:10px;padding:3px 8px;border-radius:10px;background:${cor.bg};color:${cor.lc};border:0.5px solid ${cor.border};white-space:nowrap;flex-shrink:0;margin-left:8px">${escapeHTML(cor.label)}</span>
+            <span style="font-size:10px;padding:3px 8px;border-radius:10px;background:${cor.bg};color:${cor.lc};border:0.5px solid ${cor.border};white-space:nowrap;flex-shrink:0;margin-left:8px">${cor.label}</span>
           </div>
           <div style="margin-bottom:6px">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px">
@@ -7690,4 +7691,35 @@ function iaToggleFloat(){
   if(_iaFloatAberto) document.getElementById('ia-input-float')?.focus();
 }
 
-// ── INIT IA ─────────────────────────────────
+// ── INIT IA ───────────────────────────────────────────────────
+function iaInit(){
+  iaCarregarHistorico();
+  // Se não há conversa ativa, prepara uma nova ao abrir a página
+  if(!_iaConvAtiva && _iaConvs.length){
+    _iaConvAtiva=_iaConvs[0].id;
+  }
+}
+
+// CSS para animação do typing
+const iaStyle=document.createElement('style');
+iaStyle.textContent=`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`;
+document.head.appendChild(iaStyle);
+
+// ── FIM ASSISTENTE IA ─────────────────────────────────────────
+
+// ── INIT ──────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('l-data').value = hoje();
+  document.getElementById('v-data').value = hoje();
+  document.getElementById('p-inicio').value = hoje();
+
+  document.getElementById('login-senha').addEventListener('keydown', e => {
+    if (e.key === 'Enter') entrar();
+  });
+  // Carrega notificações ao iniciar e a cada 2 minutos
+  setTimeout(carregarNotificacoes, 1500);
+  setInterval(carregarNotificacoes, 120000);
+});
+</script>
+</body>
+</html>
