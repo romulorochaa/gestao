@@ -1961,6 +1961,29 @@ function handleSupabaseError(error,contexto=''){
   return true;
 }
 
+
+// ── HANDLER GLOBAL DE ERROS ASSÍNCRONOS ─────────────────────
+window.addEventListener('unhandledrejection', function(e){
+  const err = e.reason;
+  if(!err) return;
+  const msg = err.message || String(err);
+  // Ignora erros de cancelamento de fetch (ex: navegação)
+  if(msg.includes('AbortError') || msg.includes('The user aborted')) return;
+  if(msg.includes('JWT') || msg.includes('token') || msg.includes('401')){
+    mostrarSessaoExpirada(); return;
+  }
+  console.error('Erro assíncrono não tratado:', err);
+  // Só mostra toast para erros do Supabase (não polui com erros de terceiros)
+  if(msg.includes('supabase') || err.code || err.status){
+    showToast('Erro de conexão com o servidor. Tente novamente.', 'error');
+  }
+});
+
+window.addEventListener('error', function(e){
+  // Só loga, não mostra toast para erros de sintaxe/lógica em dev
+  console.error('Erro global:', e.message, e.filename, e.lineno);
+});
+
 // ── MOBILE SIDEBAR ────────────────────────────────────────────
 function toggleMobileSidebar(){
   const sb=document.getElementById('sidebar');
@@ -2032,16 +2055,16 @@ async function entrar(){
   const errEl=document.getElementById('login-error');
   const btn=document.getElementById('btn-entrar');
   errEl.textContent='';
-  if(!usuario||!senha){ errEl.textContent='Preencha usuário e senha.'; return; }
+  if(!usuario||!senha){ errEl.textContent='Preencha usuário e senha.'; errEl.style.display='block'; return; }
   btn.disabled=true; btn.textContent='Entrando...';
   try{
     // Busca usuário globalmente pelo username (cross-company)
     const{data:u,error}=await SB.from('perfis').select('*').eq('usuario',usuario).eq('ativo',true).single();
-    if(error||!u){ errEl.textContent='Usuário não encontrado ou inativo.'; return; }
-    if(!u.empresa_id){ errEl.textContent='Usuário sem empresa vinculada. Contate o suporte.'; return; }
+    if(error||!u){ errEl.textContent='Usuário não encontrado ou inativo.'; errEl.style.display='block'; return; }
+    if(!u.empresa_id){ errEl.textContent='Usuário sem empresa vinculada. Contate o suporte.'; errEl.style.display='block'; return; }
     // Verifica senha com hash
     const senhaHash=await _hashSenha(senha);
-    if(senhaHash!==u.senha_hash){ errEl.textContent='Senha incorreta.'; return; }
+    if(senhaHash!==u.senha_hash){ errEl.textContent='Senha incorreta.'; errEl.style.display='block'; return; }
     // Login bem-sucedido — salva id e empresa_id na sessão
     sessionStorage.setItem('gestao_sessao',JSON.stringify({id:u.id, empresa_id:u.empresa_id}));
     await _iniciarApp(u);
@@ -2306,7 +2329,7 @@ function cliResetar(ctx){
 
 async function popularSelects(){
   await cliCarregar(); // garante cache carregado
-  const{data:fn}=await SB.from('funcionarios').select('id,nome').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('status','Ativo').order('nome');
+  const{data:fn}=await SB.from('funcionarios').select('id,nome').eq('empresa_id',EMP_ID).eq('status','Ativo').order('nome');
   const vr=document.getElementById('v-resp');
   if(vr){
     vr.innerHTML='<option value="">Selecione...</option>';
@@ -2321,6 +2344,7 @@ async function log(tipo,desc,status){
 
 // ── DASHBOARD ────────────────────────────────────────────────
 async function renderDashboard(){
+  try{
   const now = new Date();
   const mesAtual = now.getMonth()+1;
   const anoAtual = now.getFullYear();
@@ -2339,10 +2363,10 @@ async function renderDashboard(){
     {data:orcs},
     {data:itensAll},
   ]=await Promise.all([
-    SB.from('lancamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID),
+    SB.from('lancamentos').select('*').eq('empresa_id',EMP_ID),
     SB.from('clientes').select('status').eq('empresa_id',EMP_ID),
-    SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID),
-    SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('data_vencimento'),
+    SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID),
+    SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).order('data_vencimento'),
     SB.from('orcamentos').select('id,numero,titulo,cliente_nome,valor_total,status').eq('empresa_id',EMP_ID).order('numero',{ascending:false}),
     SB.from('itens_orcamento').select('orcamento_id,progresso,status_execucao,data_fim_prevista').eq('empresa_id',EMP_ID),
   ]);
@@ -2509,7 +2533,8 @@ async function renderDashboard(){
 // ── CLIENTES ────────────────────────────────────────────────
 let _clientes=[];
 async function renderClientes(){
-  const{data}=await SB.from('clientes').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('nome');
+  try{
+  const{data}=await SB.from('clientes').select('*').eq('empresa_id',EMP_ID).order('nome');
   _clientes=data||[];renderTabelaClientes(_clientes);
 }
 function buscarClientes(q){
@@ -2522,8 +2547,8 @@ function renderTabelaClientes(lista){
     <tr><th>Nome / Empresa</th><th>Documento</th><th>Telefone</th><th>Endereço</th><th>Município / UF</th><th>Status</th><th></th></tr>
     ${lista.map(c=>`<tr>
       <td><strong>${escapeHTML(c.nome)}</strong>${c.email?`<br><span style="font-size:11px;color:var(--text3)">${escapeHTML(c.email)}</span>`:''}</td>
-      <td style="font-size:12px">${c.documento||'—'}</td>
-      <td style="font-size:12px">${c.telefone||'—'}</td>
+      <td style="font-size:12px">${escapeHTML(c.documento)||'—'}</td>
+      <td style="font-size:12px">${escapeHTML(c.telefone)||'—'}</td>
       <td style="font-size:12px">${[c.rua,c.bairro].filter(Boolean).join(', ')||c.cidade||'—'}</td>
       <td style="font-size:12px">${[c.cidade,c.uf].filter(Boolean).join(' / ')||'—'}</td>
       <td>${badge(c.status)}</td>
@@ -2638,9 +2663,10 @@ async function salvarCliente(){
 
 // ── VENDAS ────────────────────────────────────────────────────
 async function renderVendas(){
+  try{
   const[{data:vendas},{data:parcelas}]=await Promise.all([
-    SB.from('vendas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('criado_em',{ascending:false}),
-    SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID),
+    SB.from('vendas').select('*').eq('empresa_id',EMP_ID).order('criado_em',{ascending:false}),
+    SB.from('parcelas').select('*').eq('empresa_id',EMP_ID),
   ]);
   const v=vendas||[];const p=parcelas||[];
   document.getElementById('v-abertas').textContent=v.filter(x=>['Iniciado','Proposta','Negociação'].includes(x.etapa)).length;
@@ -2672,7 +2698,7 @@ async function renderVendas(){
 
 async function abrirDetalheVenda(id){
   VENDA_ATIVA=id;
-  const{data:v}=await SB.from('vendas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single();
+  const{data:v}=await SB.from('vendas').select('*').eq('empresa_id',EMP_ID).eq('id',id).single();
   await popularSelects();
   document.getElementById('modal-venda-titulo').textContent='Editar venda';
   // Preenche busca de cliente
@@ -2701,10 +2727,10 @@ async function salvarVenda(){
   const cid=document.getElementById('v-cliente').value;
   const servico=document.getElementById('v-servico').value.trim();
   if(!cid||!servico){alert('Preencha cliente e serviço.');return;}
-  const{data:cli}=await SB.from('clientes').select('nome').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',cid).single();
+  const{data:cli}=await SB.from('clientes').select('nome').eq('empresa_id',EMP_ID).eq('id',cid).single();
   const rid=document.getElementById('v-resp').value;
   let respNome='';
-  if(rid){const{data:rf}=await SB.from('funcionarios').select('nome').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',rid).single();respNome=rf?.nome||'';}
+  if(rid){const{data:rf}=await SB.from('funcionarios').select('nome').eq('empresa_id',EMP_ID).eq('id',rid).single();respNome=rf?.nome||'';}
   const etapa=document.getElementById('v-etapa').value;
   const valor=document.getElementById('v-valor').value||0;
 
@@ -2730,7 +2756,7 @@ async function salvarVenda(){
 
 // ── ANEXOS ───────────────────────────────────────────────────
 async function carregarAnexos(vendaId){
-  const{data}=await SB.from('anexos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('venda_id',vendaId).order('criado_em');
+  const{data}=await SB.from('anexos').select('*').eq('empresa_id',EMP_ID).eq('venda_id',vendaId).order('criado_em');
   const el=document.getElementById('lista-anexos');
   if(!data||!data.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);text-align:center;padding:12px 0">Nenhum arquivo anexado ainda.</div>';return;}
   el.innerHTML=data.map(a=>`<div class="file-item">
@@ -2813,7 +2839,7 @@ async function gerarParcelas(){
 }
 
 async function carregarParcelas(vendaId){
-  const{data}=await SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('venda_id',vendaId).order('numero');
+  const{data}=await SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('venda_id',vendaId).order('numero');
   const el=document.getElementById('parcelas-existentes');
   if(!data||!data.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:12px 0">Nenhuma parcela gerada ainda. Use o formulário acima para configurar o pagamento.</div>';return;}
   const total=data.reduce((s,p)=>s+Number(p.valor),0);
@@ -3055,6 +3081,7 @@ function _finAtualizarLabel(){
 }
 
 async function renderFinanceiro(){
+  try{
   const now=new Date();
   // Inicializa seletores com mês/ano corrente
   const selMes=document.getElementById('f-sel-mes');
@@ -3076,8 +3103,8 @@ async function renderFinanceiro(){
   _finAtualizarLabel();
 
   const[{data:lancAll},{data:parcAll}]=await Promise.all([
-    SB.from('lancamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('data_lancamento',{ascending:false}),
-    SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('data_vencimento'),
+    SB.from('lancamentos').select('*').eq('empresa_id',EMP_ID).order('data_lancamento',{ascending:false}),
+    SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).order('data_vencimento'),
   ]);
 
   // Aplica filtro nos lançamentos
@@ -3151,7 +3178,7 @@ function _renderTabelaTodos(lista){
 }
 
 async function renderParcelasFinanceiro(parcelas){
-  if(!parcelas){const{data}=await SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('data_vencimento');parcelas=data||[];}
+  if(!parcelas){const{data}=await SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).order('data_vencimento');parcelas=data||[];}
   const el=document.getElementById('tabela-parcelas-fin');
   if(!parcelas.length){el.innerHTML='<div class="empty">Nenhuma parcela cadastrada. Crie parcelas na aba Vendas → Detalhes → Pagamentos.</div>';return;}
   // ordenar: atrasadas primeiro, depois pendentes por vencimento, depois recebidas
@@ -3196,7 +3223,7 @@ let _parcelaRecId = null;
 
 async function abrirRecebimento(parcelaId){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:p}=await SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',parcelaId).single();
+  const{data:p}=await SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('id',parcelaId).single();
   if(!p) return;
   _parcelaRecId = parcelaId;
 
@@ -3273,13 +3300,13 @@ async function renderLancFiltro(tipo){
   const el=document.getElementById(tipo==='Receita'?'tabela-lanc-rec':'tabela-lanc-des');
 
   // Busca lançamentos manuais do tipo
-  const{data:lancAll}=await SB.from('lancamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('tipo',tipo).order('data_lancamento',{ascending:false});
+  const{data:lancAll}=await SB.from('lancamentos').select('*').eq('empresa_id',EMP_ID).eq('tipo',tipo).order('data_lancamento',{ascending:false});
   const lancFiltrados=_finFiltrarPorData(lancAll||[],'data_lancamento');
 
   // Para Receitas: inclui também parcelas recebidas no período
   let parcRecebidas=[];
   if(tipo==='Receita'){
-    const{data:parc}=await SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('status','Recebido').order('data_recebimento',{ascending:false});
+    const{data:parc}=await SB.from('parcelas').select('*').eq('empresa_id',EMP_ID).eq('status','Recebido').order('data_recebimento',{ascending:false});
     parcRecebidas=_finFiltrarPorData(parc||[],'data_recebimento').map(p=>({
       _parcela:true,
       id:p.id,
@@ -3430,7 +3457,7 @@ function calcPreviewDespesa(){
 let _lancEditandoId = null;
 
 async function editarLancamento(id){
-  const{data:l}=await SB.from('lancamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single();
+  const{data:l}=await SB.from('lancamentos').select('*').eq('empresa_id',EMP_ID).eq('id',id).single();
   if(!l){alert('Lançamento não encontrado.');return;}
   _lancEditandoId=id;
   document.getElementById('lanc-modal-titulo').textContent='Editar lançamento';
@@ -3533,7 +3560,7 @@ async function salvarLancamento(){
 
 // ── PARCELAS A PAGAR ─────────────────────────────────────────
 async function renderParcelasAPagar(){
-  const{data:parcelas}=await SB.from('parcelas_despesa').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('data_vencimento');
+  const{data:parcelas}=await SB.from('parcelas_despesa').select('*').eq('empresa_id',EMP_ID).order('data_vencimento');
   const el=document.getElementById('tabela-apagar');
   const pendentes=(parcelas||[]).filter(p=>p.status==='Pendente');
   const totalPend=pendentes.reduce((s,p)=>s+Number(p.valor),0);
@@ -3575,7 +3602,7 @@ async function renderParcelasAPagar(){
 
 async function pagarParcelaDespesa(id){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:p}=await SB.from('parcelas_despesa').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single();
+  const{data:p}=await SB.from('parcelas_despesa').select('*').eq('empresa_id',EMP_ID).eq('id',id).single();
   if(!p)return;
 
   // Guarda contra duplo clique
@@ -3612,7 +3639,8 @@ async function excluirParcelaDespesa(id){
 
 // ── FUNCIONÁRIOS ─────────────────────────────────────────────
 async function renderFuncionarios(){
-  const{data}=await SB.from('funcionarios').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('nome');
+  try{
+  const{data}=await SB.from('funcionarios').select('*').eq('empresa_id',EMP_ID).order('nome');
   const f=data||[];
   document.getElementById('rh-total').textContent=f.length;
   document.getElementById('rh-ativos').textContent=f.filter(x=>x.status==='Ativo').length;
@@ -3736,7 +3764,7 @@ async function novoProcessoCB(){
 }
 
 async function editarProcessoCB(id){
-  const{data:p}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single();
+  const{data:p}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).eq('id',id).single();
   if(!p) return;
   _cbProcessoEditandoId=id;
   document.getElementById('cb-modal-titulo').textContent='Editar processo — Corpo de Bombeiros';
@@ -3830,7 +3858,8 @@ async function salvarProcesso(){
 }
 
 async function renderBombeiros(){
-  const{data}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('criado_em',{ascending:false});
+  try{
+  const{data}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).order('criado_em',{ascending:false});
   const procs=data||[];
 
   // Métricas
@@ -3996,7 +4025,7 @@ function copiarTexto(elementId){
 }
 
 async function verTimeline(id){
-  const{data:p}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single();
+  const{data:p}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).eq('id',id).single();
   if(!p)return;
   _tlProcessoId=id;
 
@@ -4144,7 +4173,7 @@ async function avancarEtapaSub(id, campo){
 
 async function avancarEtapa(id){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:p}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single();
+  const{data:p}=await SB.from('processos_cb').select('*').eq('empresa_id',EMP_ID).eq('id',id).single();
   const idx=ETAPAS_CB.indexOf(p.etapa);
   if(idx>=ETAPAS_CB.length-1){alert('Processo já na etapa final.');return;}
   const novaEtapa=ETAPAS_CB[idx+1];
@@ -4156,6 +4185,7 @@ async function avancarEtapa(id){
 
 // ── USUÁRIOS ─────────────────────────────────────────────────
 async function renderUsuarios(){
+  try{
   if(!isAdmin()){document.getElementById('tabela-usuarios').innerHTML='<div class="empty">Acesso restrito a administradores.</div>';return;}
   const{data}=await SB.from('perfis').select('id,nome,usuario,nivel,ativo,criado_em').order('nome');
   const el=document.getElementById('tabela-usuarios');
@@ -4286,7 +4316,8 @@ const CONFIG = {
 const EMPRESA = CONFIG.empresa;
 
 async function renderOrcamentos(){
-  const{data}=await SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('numero',{ascending:false});
+  try{
+  const{data}=await SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).order('numero',{ascending:false});
   _orcamentos=data||[];
   const aprov=_orcamentos.filter(o=>o.status==='Aprovado');
   const env=_orcamentos.filter(o=>o.status==='Enviado');
@@ -4362,8 +4393,8 @@ async function novoOrcamento(){
 async function abrirOrcamento(id){
   ORC_ATIVO=id;
   const[{data:o},{data:itens}]=await Promise.all([
-    SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single(),
-    SB.from('itens_orcamento').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('orcamento_id',id).order('numero_item'),
+    SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('id',id).single(),
+    SB.from('itens_orcamento').select('*').eq('empresa_id',EMP_ID).eq('orcamento_id',id).order('numero_item'),
   ]);
   _itensOrc=itens||[];
 
@@ -4424,7 +4455,7 @@ async function preencherDadosCliente(){
   // Busca do cache, ou do banco se necessário
   let cli=_cliLista.find(c=>c.id===cid);
   if(!cli){
-    const{data}=await SB.from('clientes').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',cid).single();
+    const{data}=await SB.from('clientes').select('*').eq('empresa_id',EMP_ID).eq('id',cid).single();
     cli=data;
   }
   if(!cli) return;
@@ -4588,8 +4619,8 @@ function renderItensOrc(){
 async function gerarPreviewDoc(){
   if(!ORC_ATIVO)return;
   const[{data:o},{data:itens}]=await Promise.all([
-    SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',ORC_ATIVO).single(),
-    SB.from('itens_orcamento').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('orcamento_id',ORC_ATIVO).order('numero_item'),
+    SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('id',ORC_ATIVO).single(),
+    SB.from('itens_orcamento').select('*').eq('empresa_id',EMP_ID).eq('orcamento_id',ORC_ATIVO).order('numero_item'),
   ]);
   if(!o)return;
   const venc=o.data_emissao&&o.validade_dias?
@@ -4628,7 +4659,7 @@ async function gerarPreviewDoc(){
         <div style="font-size:42px;font-weight:900;line-height:1.1;letter-spacing:-1px;margin-bottom:16px">PROPOSTA<br>COMERCIAL</div>
         <div style="width:200px;height:3px;background:#1a1a1a;margin-bottom:20px"></div>
         <div style="font-size:12px;font-weight:700;letter-spacing:1px;color:#333;text-transform:uppercase">${o.cliente_nome||''}</div>
-        ${o.cliente_doc?`<div style="font-size:12px;color:#555;margin-top:4px">CNPJ: ${o.cliente_doc}</div>`:''}
+        ${o.cliente_doc?`<div style="font-size:12px;color:#555;margin-top:4px">CNPJ: ${escapeHTML(o.cliente_doc)}</div>`:''}
       </div>
     </div>
 
@@ -4697,16 +4728,16 @@ async function gerarPreviewDoc(){
       <table style="width:100%;border:1px solid #bbb;border-top:none;border-collapse:collapse">
         <tr><td style="background:#8b1a1a;color:#fff;text-align:center;padding:7px;font-weight:700;font-size:13px;letter-spacing:1px">OBSERVAÇÕES</td></tr>
         <tr><td style="padding:14px">
-          ${o.prazo_execucao?`<p style="margin-bottom:12px"><strong>PRAZO DO SERVIÇO</strong><br><span style="font-size:12px">${o.prazo_execucao}</span></p>`:''}
-          ${o.cond_pagto?`<p style="margin-bottom:12px"><strong>FORMAS DE PAGAMENTO</strong><br><span style="font-size:12px;white-space:pre-line">${o.cond_pagto}</span></p>`:''}
-          ${o.observacoes?`<p><strong>OUTRAS OBSERVAÇÕES</strong><br><span style="font-size:12px;white-space:pre-line">${o.observacoes}</span></p>`:''}
+          ${o.prazo_execucao?`<p style="margin-bottom:12px"><strong>PRAZO DO SERVIÇO</strong><br><span style="font-size:12px">${escapeHTML(o.prazo_execucao)}</span></p>`:''}
+          ${o.cond_pagto?`<p style="margin-bottom:12px"><strong>FORMAS DE PAGAMENTO</strong><br><span style="font-size:12px;white-space:pre-line">${escapeHTML(o.cond_pagto)}</span></p>`:''}
+          ${o.observacoes?`<p><strong>OUTRAS OBSERVAÇÕES</strong><br><span style="font-size:12px;white-space:pre-line">${escapeHTML(o.observacoes)}</span></p>`:''}
         </td></tr>
       </table>`:''}
       <!-- Assinatura -->
       ${o.responsavel?`<div style="margin-top:40px;padding:0 20px 40px;text-align:center">
         <div style="display:inline-block;border-top:1px solid #333;padding-top:8px;min-width:220px">
-          <div style="font-weight:700;font-size:13px">${o.responsavel.split('—')[0]?.trim()||o.responsavel}</div>
-          ${o.responsavel.includes('—')?`<div style="font-size:11px;color:#555">${o.responsavel.split('—')[1]?.trim()}</div>`:''}
+          <div style="font-weight:700;font-size:13px">${escapeHTML(o.responsavel.split('—')[0]?.trim()||o.responsavel)}</div>
+          ${o.responsavel.includes('—')?`<div style="font-size:11px;color:#555">${escapeHTML(o.responsavel.split('—')[1]?.trim())}</div>`:''}
         </div>
       </div>`:''}
     </div>
@@ -4820,7 +4851,7 @@ function calcContratoParcela(){
 
 async function confirmarContratacao(id){
   if(!podeEditar()){alert('Sem permissão.');return;}
-  const{data:o}=await SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single();
+  const{data:o}=await SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('id',id).single();
   if(!o)return;
   _orcContrato=o;
   document.getElementById('ct-cliente').textContent=o.cliente_nome||'—';
@@ -4839,7 +4870,7 @@ async function confirmarContratacao(id){
   document.getElementById('ct-parcelas-saldo').value='1';
   document.getElementById('ct-vencimento-saldo').value='';
   document.getElementById('ct-preview-parcela').style.display='none';
-  const{data:funcs}=await SB.from('funcionarios').select('id,nome').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('status','Ativo').order('nome');
+  const{data:funcs}=await SB.from('funcionarios').select('id,nome').eq('empresa_id',EMP_ID).eq('status','Ativo').order('nome');
   const sel=document.getElementById('ct-responsavel');
   sel.innerHTML='<option value="">Selecione (opcional)</option>';
   (funcs||[]).forEach(f=>sel.innerHTML+=`<option value="${f.id}">${escapeHTML(f.nome)}</option>`);
@@ -4853,7 +4884,7 @@ async function executarContratacao(){
   const tipo=document.querySelector('input[name="ct-tipo"]:checked')?.value||'igual';
   const respId=document.getElementById('ct-responsavel').value;
   let respNome='';
-  if(respId){const{data:rf}=await SB.from('funcionarios').select('nome').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',respId).single();respNome=rf?.nome||'';}
+  if(respId){const{data:rf}=await SB.from('funcionarios').select('nome').eq('empresa_id',EMP_ID).eq('id',respId).single();respNome=rf?.nome||'';}
   const rows=[];
   if(tipo==='igual'){
     const qtd=parseInt(document.getElementById('ct-parcelas').value||1);
@@ -5138,7 +5169,7 @@ async function impCriarOrcamento(){
     }
 
     // 2. Busca dados completos do cliente
-    const{data:cli}=await SB.from('clientes').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',clienteId).single();
+    const{data:cli}=await SB.from('clientes').select('*').eq('empresa_id',EMP_ID).eq('id',clienteId).single();
 
     // 3. Gera número da proposta via sequence
     const{data:seqData,error:seqErr}=await SB.rpc('proximo_numero_orcamento');
@@ -5247,6 +5278,7 @@ let _calLembretesDisparados = new Set();
 
 // ── INIT ──────────────────────────────────────────────────────
 async function renderCalendario(){
+  try{
   await Promise.all([calCarregarListas(), calCarregarTarefas()]);
   // Restaura último modo usado
   const savedMode = localStorage.getItem('cal_mode')||'lista';
@@ -5256,12 +5288,12 @@ async function renderCalendario(){
 }
 
 async function calCarregarListas(){
-  const{data}=await SB.from('listas_tarefas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('criado_em');
+  const{data}=await SB.from('listas_tarefas').select('*').eq('empresa_id',EMP_ID).order('criado_em');
   _calListas=data||[];
 }
 
 async function calCarregarTarefas(){
-  const{data}=await SB.from('tarefas').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).order('data').order('hora');
+  const{data}=await SB.from('tarefas').select('*').eq('empresa_id',EMP_ID).order('data').order('hora');
   _calTarefas=data||[];
 }
 
@@ -5584,7 +5616,7 @@ async function calPopularModalListas(selId){
 
 async function calCarregarResponsaveis(sel=''){
   const s=document.getElementById('tar-responsavel');
-  const{data}=await SB.from('funcionarios').select('nome').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('status','Ativo').order('nome');
+  const{data}=await SB.from('funcionarios').select('nome').eq('empresa_id',EMP_ID).eq('status','Ativo').order('nome');
   s.innerHTML='<option value="">— Selecione —</option>'+
     (data||[]).map(f=>`<option ${f.nome===sel?'selected':''}>${escapeHTML(f.nome)}</option>`).join('');
 }
@@ -5798,10 +5830,10 @@ function calRenderDiaria(){
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:12px;color:var(--text2)">
             ${t.hora?`<span>${t.hora.slice(0,5)}</span>`:''}
             ${t.tipo&&t.tipo!=='Tarefa'?`<span style="padding:1px 7px;border-radius:10px;background:${cor.bg};color:${cor.text};border:0.5px solid ${cor.border}">${escapeHTML(t.tipo)}</span>`:''}
-            ${t.local?`<span>📍 ${t.local}</span>`:''}
+            ${t.local?`<span>📍 ${escapeHTML(t.local)}</span>`:''}
             ${t.responsavel?`<span>👤 ${escapeHTML(t.responsavel)}</span>`:''}
           </div>
-          ${t.observacoes?`<div style="font-size:12px;color:var(--text3);margin-top:4px">${t.observacoes}</div>`:''}
+          ${t.observacoes?`<div style="font-size:12px;color:var(--text3);margin-top:4px">${escapeHTML(t.observacoes)}</div>`:''}
         </div>
       </div>`;
     });
@@ -6250,6 +6282,7 @@ async function renderGanttPage(){
 }
 
 async function renderGanttDashboard(){
+  try{
   // Busca todas obras aprovadas + seus itens
   const{data:obras}=await SB.from('orcamentos')
     .select('id,numero,titulo,cliente_nome,valor_total,data_emissao,validade_dias,prazo_execucao')
@@ -6439,9 +6472,9 @@ async function carregarGantt(id){
   if(!id)return;
   _ganttOrcId=id;
   const[{data:orc},{data:itens},{data:comentarios}]=await Promise.all([
-    SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('id',id).single(),
-    SB.from('itens_orcamento').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('orcamento_id',id).order('numero_item'),
-    SB.from('gantt_comentarios').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('orcamento_id',id).order('criado_em'),
+    SB.from('orcamentos').select('*').eq('empresa_id',EMP_ID).eq('id',id).single(),
+    SB.from('itens_orcamento').select('*').eq('empresa_id',EMP_ID).eq('orcamento_id',id).order('numero_item'),
+    SB.from('gantt_comentarios').select('*').eq('empresa_id',EMP_ID).eq('orcamento_id',id).order('criado_em'),
   ]);
   _ganttOrc=orc;
   _ganttItens=itens||[];
@@ -6663,8 +6696,8 @@ async function editarItemGantt(id){
 
   // Busca responsáveis e subitens em paralelo
   const[{data:funcs},{data:subs}]=await Promise.all([
-    SB.from('funcionarios').select('nome').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('status','Ativo').order('nome'),
-    SB.from('subitens_item').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('item_id',id).order('criado_em'),
+    SB.from('funcionarios').select('nome').eq('empresa_id',EMP_ID).eq('status','Ativo').order('nome'),
+    SB.from('subitens_item').select('*').eq('empresa_id',EMP_ID).eq('item_id',id).order('criado_em'),
   ]);
   _subItensAtivos[id]=subs||[];
 
@@ -6908,7 +6941,7 @@ async function enviarComentario(){
   if(error){alert('Erro: '+error.message);return;}
   document.getElementById('gantt-novo-comentario').value='';
   // Recarrega comentários
-  const{data}=await SB.from('gantt_comentarios').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).eq('orcamento_id',_ganttOrcId).order('criado_em');
+  const{data}=await SB.from('gantt_comentarios').select('*').eq('empresa_id',EMP_ID).eq('orcamento_id',_ganttOrcId).order('criado_em');
   renderComentarios(data||[]);
   carregarNotificacoes();
 }
@@ -6928,6 +6961,7 @@ async function novoLancamentoObra(){
 }
 
 async function renderGanttFinanceiro(){
+  try{
   const el=document.getElementById('gantt-financeiro');
   if(!el||!_ganttOrcId||!_ganttOrc)return;
 
@@ -7335,7 +7369,7 @@ function mostrarNotificacao(titulo, texto, tipo='info'){
 async function renderConfig(){
   if(!isAdmin()) return;
   // Carrega config salva no banco (tabela config_empresa)
-  const{data}=await SB.from('config_empresa').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).limit(1).maybeSingle();
+  const{data}=await SB.from('config_empresa').select('*').eq('empresa_id',EMP_ID).limit(1).maybeSingle();
   const cfg=data||{};
   // Preenche campos com valores do banco ou fallback do CONFIG local
   const campos={
@@ -7398,7 +7432,7 @@ async function salvarConfig(){
   statusEl.textContent='Salvando...';
 
   // Upsert — cria ou atualiza o único registro
-  const{data:existing}=await SB.from('config_empresa').select('id').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).limit(1).maybeSingle();
+  const{data:existing}=await SB.from('config_empresa').select('id').eq('empresa_id',EMP_ID).limit(1).maybeSingle();
   let error;
   if(existing?.id){
     ({error}=await SB.from('config_empresa').update(payload).eq('id',existing.id));
@@ -7428,7 +7462,7 @@ async function salvarConfig(){
 // Carrega config do banco ao iniciar o app
 async function carregarConfigEmpresa(){
   try{
-    const{data}=await SB.from('config_empresa').select('*').eq('empresa_id',EMP_ID).eq('empresa_id',EMP_ID).limit(1).maybeSingle();
+    const{data}=await SB.from('config_empresa').select('*').eq('empresa_id',EMP_ID).limit(1).maybeSingle();
     if(data){
       // Sobrescreve CONFIG.empresa com valores do banco
       if(data.nome)     CONFIG.empresa.nome     =data.nome;
